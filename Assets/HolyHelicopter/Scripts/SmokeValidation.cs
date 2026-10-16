@@ -78,7 +78,7 @@ namespace HolyHelicopter
                 reportPath = outputPath, previewOnly = HasArgument("-holy-preview"), stressPreview = HasArgument("-holy-stress")
             };
             report.performanceScope += report.stressPreview
-                ? " Stress preview renders 3,000 active monsters and manually advances one real Horde.Tick(1/60) per sampled frame; elapsed mission time advances with it. Other gameplay remains frozen."
+                ? " Stress preview holds at least 3,000 monsters via replenishment while running real Game.Step(1/60), silver/water fire, rockets, civilian AI, enemy attacks, effects and HUD. Preview supplies are unlimited only in this explicit benchmark."
                 : " Normal preview freezes simulation and samples rendering/HUD only.";
             Application.logMessageReceived += CaptureError;
             Check("Report destination", () => Directory.CreateDirectory(Path.GetDirectoryName(outputPath)));
@@ -90,7 +90,7 @@ namespace HolyHelicopter
             {
                 Require(game != null, "Game singleton was not created after 180 frames.");
                 Require(game.World && game.Flight && game.Arsenal && game.Horde && game.Hud, "A gameplay subsystem is missing.");
-                Require(game.Horde.Count >= 1500, "Expected at least 1,500 initial monsters; got " + game.Horde.Count);
+                Require(game.Horde.Count == game.Balance.InitialEnemies, "Initial population does not match the balance profile: " + game.Horde.Count);
                 Require(game.Crypts.Count == 4 && game.ActiveCrypts == 4, "Expected four active crypts.");
                 Require(game.Survivors.Count == 8, "Expected eight survivors.");
                 Require(game.Supplies.Count >= 8, "Initial supply network is missing.");
@@ -109,16 +109,20 @@ namespace HolyHelicopter
                 Check("Preview composition", PreparePreview);
                 // Time scale freezes effect lifetimes while render frames continue normally.
                 float previousScale = Time.timeScale;
-                Time.timeScale = 0;
+                Time.timeScale = report.stressPreview ? 1 : 0;
                 for (int i = 0; i < 30; i++) yield return null;
                 report.renderPopulation = game.Horde.Count;
                 double frameSeconds = 0;
-                for (int i = 0; i < 120; i++)
+                for (int i = 0; i < (report.stressPreview ? 360 : 120); i++)
                 {
                     if (report.stressPreview)
                     {
-                        game.Elapsed += 1f / 60;
-                        game.Horde.Tick(1f / 60);
+                        game.Paused = false;
+                        game.Step(1f / 60);
+                        Invoke(game.Arsenal, "TryFire", 0);
+                        Invoke(game.Arsenal, "TryFire", 1);
+                        Invoke(game.Arsenal, "TryFire", 2);
+                        if (game.Horde.Count < 3000) game.Horde.SpawnHorde(game.Crypts[0].Position + Vector3.back * 13, 3000 - game.Horde.Count);
                     }
                     yield return null;
                     frameSeconds += Time.unscaledDeltaTime;
@@ -138,13 +142,26 @@ namespace HolyHelicopter
 
             if (report.previewOnly) { Finish(); yield break; }
 
+            if (report.renderedFrames > 0)
+            {
+                Destroy(game.gameObject);
+                yield return null;
+                game = new GameObject("Fresh mission after destructive combat preview").AddComponent<Game>();
+                game.enabled = false; game.Begin(); game.SetCursor(true); game.Audio.Muted = true;
+            }
+
             Check("Terrain clearance, altitude limits and velocity", CheckFlight);
             Check("Analytic terrain aiming", CheckAim);
+            Check("Crypts require travel beyond base weapon range", CheckCryptTravel);
+            Check("Crowd salvage cannot buy the entire armory immediately", CheckEconomy);
             Check("Armory purchases, upgrades and independent triggers", CheckArmory);
+            Check("Rocket friendly-fire warning, falloff and casualty policy", CheckFriendlyFire);
             Check("Ammo replenishes only owned weapons", CheckAmmo);
+            ThreatValidation.Run(game, (name, passed, detail) => AddResult(name, passed, detail, 0));
             Check("Horde capacity and area damage accounting", CheckCrowd);
             Check("Stationary swarm builds a destructible skeleton tower", CheckTower);
             Check("High/low supply hooking and full-resource preservation", CheckSupplies);
+            Check("Full-speed swept supply capture", CheckMovingSupply);
             Check("Interrupted rescue resets its target and visual", CheckRescueInterruption);
             Check("Rescue capacity, passenger delivery and base service", CheckRescueAndBase);
             Check("Four crypts plus four delivered civilians complete mission", CheckVictory);
@@ -154,13 +171,17 @@ namespace HolyHelicopter
 
         void PreparePreview()
         {
-            Screen.SetResolution(1600, 900, false);
-            Vector3 position = World.Ground(-91, -62) + Vector3.up * 24f;
-            Vector3 target = World.Ground(-105, -13) + Vector3.up * 1.5f;
+            string size = Argument("-holy-size") ?? "1600x900";
+            string[] dimensions = size.Split('x');
+            Screen.SetResolution(int.Parse(dimensions[0]), int.Parse(dimensions[1]), false);
+            Vector3 target = game.Crypts[0].Position + Vector3.forward * -13 + Vector3.up * 1.5f;
+            Vector3 position = World.Ground(target.x + 14, target.z - 49) + Vector3.up * 24f;
             game.Flight.Teleport(position);
             Vector3 direction = target - position;
             game.Flight.transform.rotation = Quaternion.Euler(0, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg, 0);
             game.Flight.Camera.transform.rotation = Quaternion.LookRotation(direction);
+            typeof(FlightController).GetField("yaw", InstanceMembers).SetValue(game.Flight, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg);
+            typeof(FlightController).GetField("pitch", InstanceMembers).SetValue(game.Flight, -Mathf.Asin(direction.normalized.y) * Mathf.Rad2Deg);
             Shader.SetGlobalVector("_HolyLampPosition", new Vector4(position.x, position.y, position.z, 1));
             Shader.SetGlobalVector("_HolyLampDirection", direction.normalized);
             game.Arsenal.Tick(0, false);
@@ -168,8 +189,10 @@ namespace HolyHelicopter
             game.Message("MIDNIGHT MASS  /  Clear the cemetery. Bring the parish home.");
             // Produce real weapon feedback in the composed preview, preserving a believable scene.
             Invoke(game.Arsenal, "TryFire", 1);
+            if (report.stressPreview) game.Elapsed = 240;
             if (report.stressPreview && game.Horde.Count < 3000)
-                game.Horde.SpawnHorde(World.Ground(-105, -13), 3000 - game.Horde.Count);
+                game.Horde.SpawnHorde(target, 3000 - game.Horde.Count);
+            if (report.stressPreview) { game.Arsenal.Weapons[2].Unlocked = true; game.Arsenal.Weapons[2].Ammo = 999; }
         }
 
         IEnumerator CaptureScreenshots()
@@ -334,6 +357,73 @@ namespace HolyHelicopter
             Require(!game.Arsenal.Upgrade(2) && game.Salvage == before, "An upgrade was allowed away from base.");
         }
 
+        void CheckCryptTravel()
+        {
+            foreach (var crypt in game.Crypts)
+                Require(Game.HorizontalDistance(crypt.Position, World.BasePosition) > game.Arsenal.Weapons[2].Range + 30,
+                    crypt.Name + " is within comfortable rocket range of the helipad.");
+        }
+
+        void CheckEconomy()
+        {
+            int before = game.Salvage;
+            for (int i = 0; i < 200; i++) game.OnEnemyKilled(World.Ground(0, 100), EnemyKind.Skeleton);
+            int gained = game.Salvage - before;
+            Require(gained == 25, "200 ordinary kills should yield 25 salvage, got " + gained);
+            Require(gained < game.Arsenal.UnlockCost(2), "One opening skirmish buys rockets.");
+            Require(game.Balance.CryptSalvage + game.Balance.RescueSalvage * 4 >= game.Arsenal.UnlockCost(2), "A successful rescue/crypt sortie cannot afford its first new weapon.");
+            int completeArmory = game.Arsenal.UnlockCost(2) + game.Arsenal.UnlockCost(3) + game.Arsenal.UnlockCost(4);
+            Require(completeArmory > game.Balance.CryptSalvage * 4 + game.Balance.RescueSalvage * 4 + gained, "Objectives alone immediately buy the full armory.");
+        }
+
+        void CheckFriendlyFire()
+        {
+            Survivor near = game.Survivors[0], far = game.Survivors[1];
+            Vector3 oldNear = near.Position, oldFar = far.Position;
+            float nearHealth = near.Health, farHealth = far.Health;
+            int oldLosses = game.CivilianLosses;
+            Vector3 impact = World.Ground(365, -270);
+            near.Position = impact;
+            far.Position = World.Ground(impact.x + 32, impact.z);
+            near.Health = far.Health = 100;
+            game.Flight.Teleport(impact + new Vector3(0, 25, -55));
+            game.Flight.Camera.transform.rotation = Quaternion.LookRotation(impact + Vector3.up - game.Flight.Camera.transform.position);
+            game.Arsenal.Weapons[2].Cooldown = 0;
+            game.Arsenal.Tick(0, false);
+            Require(game.Arsenal.FriendlyFireRisk, "Rocket aim failed to warn about a civilian in its blast.");
+            Invoke(game.Arsenal, "TryFire", 2);
+            for (int i = 0; i < 40; i++) game.Arsenal.Tick(.05f, false);
+            Require(near.Health <= 0, "A direct rocket is no longer dangerous to civilians.");
+            Require(far.Health >= 99, "Rocket killed a civilian outside the blast.");
+            Invoke(game, "CheckCivilians");
+            Require(!game.GameOver && game.CivilianLosses == oldLosses + 1, "Civilian loss ended the sortie or went unrecorded.");
+            foreach (var s in game.Survivors) s.Health = 0;
+            Invoke(game, "CheckCivilians");
+            Require(!game.GameOver && game.ExtractionQuota == 0, "Unattainable rescue quota still blocks the mission.");
+            foreach (var s in game.Survivors) { s.Health = 100; if (s.Visual) s.Visual.gameObject.SetActive(true); }
+            near.Position = oldNear; far.Position = oldFar; near.Health = nearHealth; far.Health = farHealth;
+            near.Visual.position = oldNear; far.Visual.position = oldFar;
+            game.CivilianLosses = oldLosses;
+            ((HashSet<Survivor>)typeof(Game).GetField("notifiedDeaths", InstanceMembers).GetValue(game)).Clear();
+        }
+
+        void CheckMovingSupply()
+        {
+            Vector3 point = World.Ground(330, -250);
+            game.SpawnSupply(point, SupplyKind.Fuel);
+            Supply cargo = game.Supplies[game.Supplies.Count - 1];
+            game.Fuel = 30;
+            game.Flight.Teleport(World.Ground(point.x - 18, point.z) + Vector3.up * 9);
+            Invoke(game, "TickSupplies", .05f);
+            game.Flight.Teleport(World.Ground(point.x + 18, point.z) + Vector3.up * 9);
+            typeof(FlightController).GetProperty("Velocity", InstanceMembers).SetValue(game.Flight, Vector3.right * 30);
+            Invoke(game, "TickSupplies", .05f);
+            Require(cargo.Progress > 0, "The hook missed a crate crossed between frames at full speed.");
+            game.Flight.Teleport(World.Ground(point.x + 45, point.z) + Vector3.up * 15);
+            Invoke(game, "TickSupplies", .5f);
+            Require(cargo.Collected && game.Fuel > 30, "Latched cargo was lost when the helicopter kept flying.");
+        }
+
         void CheckAmmo()
         {
             foreach (WeaponState weapon in game.Arsenal.Weapons) weapon.Ammo = 0;
@@ -466,7 +556,7 @@ namespace HolyHelicopter
             int before = game.Salvage;
             Invoke(game, "TickBase", 1f);
             Require(game.Passengers == 0 && game.Rescued == 4, "Returning home did not deliver passengers.");
-            Require(game.Salvage >= before + 300, "Delivered civilians did not award salvage.");
+            Require(game.Salvage >= before + 4 * game.Balance.RescueSalvage, "Delivered civilians did not award salvage.");
             Require(game.Hull > 25 && game.Fuel > 25 && game.Arsenal.Weapons[0].Ammo > 0, "Base did not service hull, fuel and ammo.");
             Invoke(game, "TickBase", 5f);
             Require(game.Hull >= 99.9f && game.Fuel >= 99.9f, "Base service did not reach full resources.");

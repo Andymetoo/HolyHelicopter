@@ -1,84 +1,85 @@
-HOLY HELICOPTER - OPERATION MIDNIGHT MASS
+HOLY HELICOPTER - OPERATION MIDNIGHT MASS / PLAYTEST PASS 1
 
 LAUNCH
-Run Builds/HolyHelicopter/Holy Helicopter.exe for the Windows prototype.
-Keep the executable and its accompanying build files together.
-Open Assets/Scenes/HolyHelicopter.unity in Unity 6000.4.1f1 and press Play.
-The Holy Helicopter menu also opens the scene and builds a Windows player.
-The world, monster art, cockpit graphics and sound are generated locally at runtime.
-The original SampleScene is preserved; HolyHelicopter is the enabled build scene.
+Run Builds/HolyHelicopter/Holy Helicopter.exe. Keep its build folder together.
+Or open Assets/Scenes/HolyHelicopter.unity in Unity 6000.4.1f1 and press Play.
+No additional packages, paid assets or services are required.
 
 YOUR FIRST SORTIE
-Press Enter or click BEGIN THE EXORCISM. Fly north into the valley.
-Silver minigun is on LMB; holy water is on RMB. Water clears crowds.
-Destroy the four purple crypts. Each permanently stops that site's spawning.
-Rescue at least four of the eight cyan-marked civilians and deliver them home.
-Hover below 30 feet, within 8 metres, and nearly stationary to winch a civilian.
-You have four passenger seats. Return to the gold Saint Rotor helipad to unload.
-Hover below 36 feet and slow down over the pad for free repairs, fuel and ammo.
-Press Tab there to open the armory. Buy rockets early: they are ridiculous.
-Finish both objectives and return to the pad to complete the operation.
+Press Enter or BEGIN THE EXORCISM. Fly into the valley and follow the roads.
+Start with silver on LMB and holy water on RMB. Water clears ordinary crowds.
+The invasion starts with 380 monsters and builds toward thousands in 3-5 minutes.
+Four remote crypts continuously produce reinforcements. Sealing them matters.
+Stone crypts resist bullets and water; rockets make short work of their masonry.
+Look for mint person symbols and waving people in orange safety vests.
+Slow below 46 ft within 16 metres to winch a civilian. Four passenger seats.
+Civilians flee actual monsters, seek safer paths, and approach a safe hovering heli.
+Carry at least four people home if possible. Casualties reduce the mission rating;
+a disastrous rescue effort no longer abruptly ends your flight.
+Seal all crypts and deliver the attainable rescue quota, then return home to finish.
 
 CONTROLS
-WASD         Move relative to the helicopter's heading
-Mouse        Turn / aim vertically (aim is independent of body tilt)
+WASD         Move relative to helicopter heading
+Mouse        Turn / aim vertically, independently of body tilt
 Q / E        Descend / ascend
-Wheel        Change held altitude in small steps
-LMB / RMB    Fire assigned weapons (both can fire together)
+Wheel        Change held altitude
+LMB / RMB    Fire assigned weapons, including both together
 Tab          Free cursor / return to flight
-Left-click a weapon icon to bind LMB; right-click it to bind RMB
-Escape       Pause; sensitivity, invert-Y, audio controls
+Click an unlocked icon with LMB or RMB to assign that trigger
+Escape       Pause; sensitivity, invert-Y and audio settings
 H            Field manual
 M            Mute / unmute
 R            Restart after victory or defeat
 F            Reserved
 
-STAYING ALIVE
-Moving or climbing shakes skeleton boarders off. Hover over a large crowd and
-the skeletons will build a tower up to you. Shoot the tower or fly away.
-Altitude protects against ground melee, but bats and necromancers can reach you.
-Below 33 feet, fly slowly over supplies to hook them automatically.
-Fuel/repair/full-ammo crates stay put when they are not needed.
-Ammo crates refill only weapons you own. Enemy drops are limited to avoid clutter.
-Your shots can harm civilians. Rescue them before prolonged village sieges do.
-Base defenses protect the immediate helipad; routine base babysitting is unnecessary.
-Salvage comes from kills, crypts, deliveries and purple crates. Five weapon levels.
+SUPPLY RUNS AND UPGRADES
+Fly below 46 ft across cargo boxes or fuel drums to hook them automatically.
+You can keep moving at full flight speed after the hook latches.
+Supplies refill 55% ammunition for owned weapons, 45 fuel, 40 hull or 35 salvage.
+Full-resource crates stay put. Enemy supply drops are limited and need-biased.
+Return to the gold Saint Rotor helipad below 36 ft and slow down for free service.
+Press Tab at home to open the armory. Every unlocked weapon stays available.
+Ordinary kills pay one salvage per eight; necromancers pay two extra.
+Crypts pay 100. Delivered civilians pay 45 each.
+Rockets cost 260, UV costs 420, Rapture costs 550. Upgrades compete for salvage.
+Full fuel lasts about four minutes at continuous cruise, longer while hovering.
+
+THREATS AND CONSEQUENCES
+Moving or climbing shakes boarders off. Low stationary hovering invites towers.
+Shoot a tower to trigger a bone avalanche, or move away before it reaches you.
+Bats telegraph diving attacks. Necromancers charge and fire actual traveling hexes;
+change direction after the warning, or kill the caster during its charge.
+Altitude protects against ordinary ground melee; specialized enemies can reach you.
+Orange reticle warnings flag civilians inside your selected rocket/shockwave blast.
+Friendly fire remains lethal near a rocket impact. Water is safer, not harmless.
+Watch rescue guidance for altitude, speed, range and full-cabin instructions.
 
 WEAPONS
-Silver: precise rapid fire, extra damage to vampires and bats.
-Holy water: broad splash, extra damage to skeletons and zombies.
-Blessed rockets: traveling explosive crowd/crypt killers; dangerous to civilians.
-UV absolution: sustained violet beam, very effective on vampires and bats.
-The Rapture: huge ground shockwave beneath the helicopter; clears boarders too.
+Silver: 190 m, rapid precision fire; particularly good against vampires and bats.
+Water: 120 m, broad splash; particularly good against skeletons and zombies.
+Rockets: 245 m, huge explosive crowd and crypt damage; dangerous to civilians.
+UV: 160 m, wide violet beam; useful against flying monsters and vampires.
+Rapture: ground shockwave below the gunship; also clears boarders.
 
-DEVELOPMENT
+TUNING AND DEBUGGING
+Tune Assets/HolyHelicopter/Resources/MidnightBalance.asset in Unity's Inspector.
+It controls invasion rates, assaults, rescue/hook tolerances, civilian behavior,
+fuel, salvage rewards, purchase prices and supply values.
 F3 telemetry   F6 +1,000 monsters   F7 +500 salvage   F8 return/service
-F9 screenshot (saved under the player's persistent data directory).
-Initial population: 1,600. Default population cap: 6,000.
-Monsters use dense arrays and batched animated sprites, no individual GameObjects.
-Scenery is batched mesh geometry; effects and weapon trails have fixed-size pools.
-Runtime smoke tests are opt-in: launch the player with -holy-smoke-test
--holy-report "<absolute report.json>". Add -holy-preview for screenshots only.
-Use -batchmode -nographics for headless gameplay tests. Add -holy-stress for a
-3,000-enemy rendered stress sample. Never use these flags for normal play.
+F9 screenshot in the player's persistent data directory.
+Default horde cap: 6,000. Batched sprites and fixed effect pools are preserved.
+
+OPT-IN VALIDATION (NOT NORMAL PLAY)
+-holy-smoke-test -holy-report "<absolute report.json>"
+-holy-smoke-test -holy-stress validates a controlled 3,000-monster combat sample.
+-holy-balance-test -holy-report "<absolute report.json>" runs two five-minute worlds.
+-holy-mission-test -holy-report "<absolute report.json>" flies a scripted mission.
+-holy-ui-test -holy-ui-directory "<absolute directory>" captures four UI resolutions.
+Use -batchmode -nographics for gameplay-only tests, never for screenshots/FPS.
 
 PROTOTYPE SCOPE
-One complete mission with upgrades during the mission; no saved campaign yet.
-Enemy navigation, village siege damage and boarding are deliberately abstract.
-One tower is simulated at a time. Scenery has no general collision/destruction;
-terrain avoidance uses analytic height queries and crypts have aiming volumes.
-Sprites, scenery, weapons, sound and UI are original procedural placeholders.
-No paid assets, services or additional packages are required.
-
-VERIFIED IN THIS PASS
-Windows development build: succeeded with zero build errors.
-Standalone integration suite: 19 checks passed, zero runtime errors.
-Checks cover terrain clearance, aiming, purchases and assignments, ammo ownership,
-horde damage, skeleton towers, supply hooking, rescue and mission completion.
-Actual Direct3D11 gameplay screenshots were inspected for visible crowds and HUD.
-A short 3,000-monster render/simulation sample averaged 117.7 FPS at 1600x900
-on an RTX 3050 Laptop GPU with the application capped at 120 FPS.
-6,000-monster Horde.Tick averaged 1.89 ms; this is CPU simulation time only.
-These are controlled samples, not full-mission performance guarantees.
-Flight feel, mission pacing and difficulty still need human playtesting.
-Full report and screenshots: Logs/HolyHelicopter-final* in the project folder.
+One repeatable mission and session upgrades; no saved campaign.
+Civilian movement uses lightweight avoidance, not full building navigation.
+One skeleton tower operates at a time. Scenery has no general collision or
+universal destruction; terrain avoidance and crypt hit volumes remain analytic.
+All sprites, scenery, UI and sound are original procedural placeholder assets.

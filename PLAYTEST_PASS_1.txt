@@ -1,0 +1,78 @@
+HOLY HELICOPTER - PLAYTEST PASS 1 BALANCE REPORT
+
+BEFORE / AFTER
+Opening population:       1,600 -> 380
+Crypt production, each:   7-24/sec -> 1.2-4.5/sec over four minutes
+Ordinary kill salvage:    1 per monster -> 1 per 8 monsters
+Necromancer bonus:        6 total -> 2 extra plus normal batch contribution
+Crypt reward:             160 -> 100
+Civilian delivery:        75 -> 45
+Salvage crate:            80 -> 35
+Rockets / UV / Rapture:   180/260/320 -> 260/420/550
+Silver / water ammo:      2,200/750 -> 1,150/420
+Rocket / UV / Rapture:    30/650/10 -> 18/420/6
+Fuel at full cruise:      about 7.6 min -> about 4.1 min
+Rescue tolerance:         8 m radius / 9 m altitude -> 16 m radius / 14 m altitude
+Supply pickup:            <13 m/s + 0.7 s hover -> full-speed latch + 0.45 s lift
+Crypt distance from base:  about 208-386 m -> 294-601 m, with intervening ridges
+Longest weapon range:     420 m -> 245 m rockets (silver 190/water 120/UV 160)
+Civilian-loss outcome:    immediate impossible-quota defeat -> lower grade/quota
+
+MEASURED PASSIVE WORLD, NO PLAYER FIRING
+Minute                  0      1      2      3      4      5
+Four crypts / monsters  380    704   1143   1859   2794   3974
+Four crypts / people      8      8      8      7      3      1
+Two crypts / monsters   380    542    743   1112   1550   2135
+Two crypts / people       8      8      8      8      8      4
+
+The two-sealed scenario closes the two nearest crypts before the simulation.
+Existing monsters remain; crypt destruction stops new local production.
+Base defenses remain active and killed 202/123 monsters respectively by minute 5.
+Frontier armies still arrive, with reduced strength after suppression.
+These are deterministic observations, not statistical averages over many seeds.
+
+CIVILIAN TUNING DURING VALIDATION
+The first revised model killed all eight by three minutes without intervention.
+Earlier fleeing, freedom to escape away from home, a 1.65 s adrenaline burst and
+9 damage per 3.2 s capped monster-contact interval produced the final outcomes above.
+People remain vulnerable to being cornered and to direct rocket blasts.
+The corrected rescue window rewards suppression without requiring immediate rescue.
+
+SCRIPTED COMPLETE MISSION
+152.2 seconds; four delivered, one casualty, all four crypts sealed, nine supplies
+collected, rockets bought at 75.2 seconds from earned salvage, four sorties recorded.
+824 kills and 462 salvage remained after the rocket purchase; no free test resources.
+Minimum hull 97.4%, minimum fuel 83.7%: this ideal moving pilot avoided most threats,
+collected supplies frequently and returned home, so this is an optimistic route.
+It uses perfect target knowledge and immediate steering/braking at 60 Hz; ordinary
+players still require an actual playtest to establish mission duration/difficulty.
+Planning estimate for a first human sortie sequence: roughly 4-7 minutes, unmeasured.
+A skilled fast suppression run can still finish before the peak invasion.
+
+VALIDATION
+Windows Unity 6000.4.1f1 development build succeeded with zero build errors.
+Five-minute world/civilian suite: 16 checks passed, no runtime errors.
+Full mission: passed through real flight integration, weapon cooldowns, ammunition,
+monsters, rescue, supply hooks, rewards and base service; no instant crypt destruction.
+HUD: 11 captures inspected covering flight/armory at 1024x576, 1280x720, 1600x900,
+1920x1080 plus 1024 title/pause/manual. Corrected scaled lines and ammo overlap.
+Integration/combat suite: 32 checks passed, zero runtime errors. A controlled
+360-frame sample maintained 3,000 monsters while firing silver, water and rockets,
+running civilian AI, attacks and HUD: 119.2 FPS at 1600x900 on RTX 3050 Laptop GPU.
+The application was capped at 120 FPS. This is not a full-mission benchmark.
+Separate 6,000-enemy Horde.Tick CPU sample: 1.66 ms per tick (not rendered FPS).
+
+FILES
+Logs/HolyHelicopter-pass1-balance-final.json
+Logs/HolyHelicopter-pass1-mission-final.json
+Logs/HolyHelicopter-pass1-combat-final.json
+Logs/Pass1-UI-final/HolyHelicopter-ui-report.json
+Tune Assets/HolyHelicopter/Resources/MidnightBalance.asset in the Inspector.
+
+LIMITS / NEXT PLAYTEST
+No universal scenery destruction this pass; batching and the main improvements
+were prioritized. One tower, abstract strategic movement, no saved campaign.
+Projectile aiming primarily uses terrain/crypt volumes; precise airborne collision
+and upper-body civilian hitscan interception remain simplified.
+Next: human tests of low-hover danger, rocket economy and expert mission pacing;
+then a distinct late counterattack/boss or a second operation with different routes.

@@ -8,6 +8,8 @@ namespace HolyHelicopter
         public WeaponState[] Weapons { get; private set; }
         public int LeftSlot = 0, RightSlot = 1;
         public Vector3 AimPoint { get; private set; }
+        public bool FriendlyFireRisk { get; private set; }
+        public bool AimBeyondRange(int slot) => Weapons[slot].Kind != DamageKind.Shock && Vector3.Distance(game.Flight.Camera.transform.position, AimPoint) > Weapons[slot].Range + 2;
         struct Rocket { public bool Active; public Vector3 Position, Target; public float Damage, Radius; }
         readonly Rocket[] rockets = new Rocket[32];
         Game game;
@@ -18,21 +20,22 @@ namespace HolyHelicopter
             game = owner;
             Weapons = new[]
             {
-                Weapon("Silver minigun", "SILVER", "A fast silver argument. Pierces the night. Vampires hate the paperwork.", DamageKind.Silver, new Color(1,.83f,.39f), 2200, true),
-                Weapon("Holy water cannon", "WATER", "Wide consecrated splash. Skeletons and zombies dissolve on contact.", DamageKind.Water, new Color(.25f,.85f,1), 750, true),
-                Weapon("Blessed rockets", "ROCKET", "Enormous crowd-clearing blasts. Watch for civilians in the blast zone.", DamageKind.Rocket, new Color(1,.41f,.19f), 30, false),
-                Weapon("UV absolution", "UV", "A focused ultraviolet sunbeam. Especially rude to vampires and bats.", DamageKind.UV, new Color(.78f,.42f,1), 650, false),
-                Weapon("The Rapture", "RAPTURE", "A ground-clearing holy shockwave. Also removes unwanted passengers.", DamageKind.Shock, new Color(1,.86f,.31f), 10, false)
+                Weapon("Silver minigun", "SILVER", "190 m precision fire. Shreds bats and vampires. Use near civilians with care.", DamageKind.Silver, new Color(1,.83f,.39f), 1150, 190, true),
+                Weapon("Holy water cannon", "WATER", "120 m crowd spray. Melts skeletons. Safer around civilians; still causes harm.", DamageKind.Water, new Color(.25f,.85f,1), 420, 120, true),
+                Weapon("Blessed rockets", "ROCKET", "245 m range. Huge crowd-clearing blasts. Orange aim warning means civilians nearby.", DamageKind.Rocket, new Color(1,.41f,.19f), 18, 245, false),
+                Weapon("UV absolution", "UV", "160 m beam. Burns vampires and bats. Wide rays cut through a diving swarm.", DamageKind.UV, new Color(.78f,.42f,1), 420, 160, false),
+                Weapon("The Rapture", "RAPTURE", "Shockwave below the gunship. Clears crowds and boarders. Check for civilians!", DamageKind.Shock, new Color(1,.86f,.31f), 6, 65, false)
             };
         }
 
-        static WeaponState Weapon(string name, string shortName, string description, DamageKind kind, Color color, float ammo, bool unlocked)
-            => new WeaponState { Name = name, ShortName = shortName, Description = description, Kind = kind, Color = color, Ammo = ammo, MaxAmmo = ammo, Unlocked = unlocked };
+        static WeaponState Weapon(string name, string shortName, string description, DamageKind kind, Color color, float ammo, float range, bool unlocked)
+            => new WeaponState { Name = name, ShortName = shortName, Description = description, Kind = kind, Color = color, Ammo = ammo, MaxAmmo = ammo, Range = range, Unlocked = unlocked };
 
         public void Tick(float dt, bool canFire)
         {
             var camera = game.Flight.Camera;
             AimPoint = TraceAim(camera.transform.position, camera.transform.forward, 420f);
+            FriendlyFireRisk = CiviliansInBlast(LeftSlot) || CiviliansInBlast(RightSlot);
             for (int i = 0; i < Weapons.Length; i++) Weapons[i].Cooldown -= dt;
             if (canFire && Mouse.current != null)
             {
@@ -72,7 +75,7 @@ namespace HolyHelicopter
             float power = 1f + .42f * (w.Level - 1);
             var view = game.Flight.Camera.transform;
             Vector3 muzzle = view.position + view.right * (index == RightSlot ? 1.1f : -1.1f) - view.up * .75f + view.forward * 1.8f;
-            Vector3 aim = AimPoint;
+            Vector3 aim = TraceAim(view.position, view.forward, w.Range);
             float distance = Vector3.Distance(view.position, aim);
             switch (w.Kind)
             {
@@ -88,7 +91,6 @@ namespace HolyHelicopter
                     break;
                 case DamageKind.Water:
                     w.Cooldown = .105f;
-                    if (distance > 190f) aim = view.position + view.forward * 190f;
                     game.DamageArea(aim, 6.5f + w.Level * 1.1f, 29f * power, w.Kind);
                     Vector3 previous = muzzle;
                     for (int i = 1; i <= 4; i++)
@@ -179,7 +181,19 @@ namespace HolyHelicopter
             game.Audio.Play(SoundCue.Select, .35f);
         }
 
-        public int UnlockCost(int slot) => slot == 2 ? 180 : slot == 3 ? 260 : slot == 4 ? 320 : 0;
+        public int UnlockCost(int slot) => slot == 2 ? game.Balance.RocketUnlock : slot == 3 ? game.Balance.UVUnlock : slot == 4 ? game.Balance.RaptureUnlock : 0;
+
+        bool CiviliansInBlast(int slot)
+        {
+            var w = Weapons[slot];
+            if (!w.Unlocked || w.Kind != DamageKind.Rocket && w.Kind != DamageKind.Shock) return false;
+            var view = game.Flight.Camera.transform;
+            Vector3 point = w.Kind == DamageKind.Shock ? World.Ground(view.position.x, view.position.z) : TraceAim(view.position, view.forward, w.Range);
+            float radius = w.Kind == DamageKind.Shock ? 29 + w.Level * 4 : 17 + w.Level * 2;
+            foreach (var s in game.Survivors)
+                if (s.Alive && Vector3.Distance(point, s.Position + Vector3.up) < radius + 2) return true;
+            return false;
+        }
 
         public bool Unlock(int slot)
         {

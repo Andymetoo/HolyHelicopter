@@ -99,6 +99,7 @@ namespace HolyHelicopter
             if (material == null || SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) return;
             float dt = game.Paused ? 0 : Mathf.Min(Time.deltaTime, .05f);
             int batch = 0;
+            Vector3 cameraPosition = game.Flight.Camera.transform.position;
             for (int i = 0; i < Capacity; i++)
             {
                 if (sparks[i].Life <= 0) continue;
@@ -108,9 +109,12 @@ namespace HolyHelicopter
                 s.Position += s.Velocity * dt;
                 sparks[i] = s;
                 if (s.Life <= 0) continue;
+                // Debris entering the canopy shrinks away instead of covering the pilot's view.
+                float nearFade = Mathf.InverseLerp(2.25f, 16f, (s.Position - cameraPosition).sqrMagnitude);
+                if (nearFade <= .01f) continue;
                 for (int n = 0; n < 6; n++)
                 {
-                    vertices[batch * 6 + n] = s.Position + Shape[n] * (s.Size * s.Life / s.Total);
+                    vertices[batch * 6 + n] = s.Position + Shape[n] * (s.Size * s.Life / s.Total * nearFade);
                     colors[batch * 6 + n] = s.Color;
                 }
                 batch++;

@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47caa10534774b699821f11c3b97a821, type: 3}
+  m_Name: MidnightBalance
+  m_EditorClassIdentifier: 
+  InitialEnemies: 380
+  EscalationSeconds: 240
+  CryptSpawnStart: 1.2
+  CryptSpawnPeak: 4.5
+  AssaultStart: 150
+  AssaultInterval: 70
+  AssaultSize: 100
+  CivilianSpeed: 2.7
+  CivilianPanicSpeed: 5.8
+  CivilianHitDamage: 9
+  CivilianHitInterval: 3.2
+  CivilianGraceSeconds: 45
+  RescueRadius: 16
+  RescueAltitude: 14
+  RescueSpeed: 11
+  RescueSeconds: 1.6
+  SupplyRadius: 12
+  SupplyAltitude: 14
+  SupplySeconds: 0.45
+  KillsPerSalvage: 8
+  EliteSalvage: 2
+  CryptSalvage: 100
+  RescueSalvage: 45
+  CrateSalvage: 35
+  RocketUnlock: 260
+  UVUnlock: 420
+  RaptureUnlock: 550
+  UpgradeBase: 100
+  UpgradePerLevel: 80
+  KillsPerSupply: 180
+  FuelIdlePerSecond: 0.29
+  FuelSpeedMultiplier: 0.004
+  AmmoCrateFraction: 0.55
+  FuelCrate: 45
+  RepairCrate: 40

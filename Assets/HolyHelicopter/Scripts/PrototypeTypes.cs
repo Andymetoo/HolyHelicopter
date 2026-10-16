@@ -22,8 +22,12 @@ namespace HolyHelicopter
     public sealed class Survivor
     {
         public Vector3 Position;
+        public Vector3 Home, Velocity, EscapeDirection;
         public Transform Visual;
+        public Transform Body, Head, LeftArm, RightArm, LeftLeg, RightLeg, Beacon, GroundMarker;
         public float Health = 100f;
+        public float LastHealth = 100f, Phase, PanicSeconds, HitCooldown, ThinkTimer, NearestThreat = float.PositiveInfinity;
+        public int ThreatCount;
         public bool Rescued;
         public bool Alive => Health > 0f && !Rescued;
     }
@@ -44,7 +48,7 @@ namespace HolyHelicopter
         public Color Color;
         public bool Unlocked;
         public int Level = 1;
-        public float Ammo, MaxAmmo, Cooldown;
-        public int UpgradeCost => 80 + Level * 60;
+        public float Ammo, MaxAmmo, Cooldown, Range;
+        public int UpgradeCost => Game.I && Game.I.Balance ? Game.I.Balance.UpgradeBase + Level * Game.I.Balance.UpgradePerLevel : 100 + Level * 80;
     }
 }

@@ -11,10 +11,19 @@ namespace HolyHelicopter
     {
         struct Enemy
         {
-            public Vector3 Position;
-            public float Health, Phase, Ground, Speed, AttackTime, Flash;
+            public Vector3 Position, AttackTarget;
+            public float Health, Phase, Ground, Speed, AttackTime, AttackPhase, Flash;
             public EnemyKind Kind;
-            public byte Army;
+            public byte Army, AttackState;
+            public int Id;
+        }
+
+        struct HexProjectile
+        {
+            public Vector3 Position, Target, Velocity;
+            public float Charge, Life;
+            public bool Active;
+            public int SourceId;
         }
 
         public int Capacity = 6000;
@@ -23,15 +32,31 @@ namespace HolyHelicopter
         public int TowerCount { get; private set; }
         public float TowerHeight => Mathf.Min(48f, TowerCount * .255f);
         public Vector3 TowerPosition { get; private set; }
-        public float Pressure => Mathf.Clamp01((Count - 900f) / 3300f);
+        public float Pressure => Mathf.Clamp01((Count - 350f) / 3650f);
+        public float ThreatLevel { get; private set; }
+        public int ActiveHexes { get; private set; }
+        public int ChargingHexes { get; private set; }
+        public int DivingBats { get; private set; }
+        public Vector3 NearestHexPosition { get; private set; }
+        public float NearestHexDistance { get; private set; } = float.PositiveInfinity;
+        public int ReinforcementsSpawned { get; private set; }
+        public int AssaultsLaunched { get; private set; }
+        public int FrontierEnemiesSpawned { get; private set; }
+        public float SpawnRatePerCrypt { get; private set; }
+        public float NextAssaultIn => _game == null ? 0f : Mathf.Max(0f, _nextAssaultTime - _game.Elapsed);
+        public Vector3 LastAssaultPosition { get; private set; }
 
         Game _game;
         Enemy[] _enemies;
-        int _count, _frame;
-        float _spawnClock, _civilianClock, _towerClock, _stillTime, _towerIntegrity;
-        float _boardClock, _shakeClock, _rangedClock, _towerFlash;
+        int _count, _frame, _nextEnemyId;
+        float _targetClock, _towerClock, _stillTime, _towerIntegrity, _nextAssaultTime;
+        float _boardClock, _shakeClock, _hexCastClock, _hexHitClock, _batHitClock, _hexVisualClock, _towerFlash;
         float _towerMessageTime = -30f, _boardMessageTime = -30f;
+        float[] _cryptSpawnBudgets;
         readonly Vector3[] _armyTargets = new Vector3[2];
+        readonly Vector3[] _civilianTargets = new Vector3[32];
+        readonly int[] _civilianTargetCounts = new int[2];
+        readonly HexProjectile[] _hexes = new HexProjectile[40];
         struct BillboardVertex
         {
             public Vector3 Position;
@@ -47,10 +72,12 @@ namespace HolyHelicopter
         public void Initialize(Game game)
         {
             _game = game;
-            Capacity = Mathf.Clamp(Capacity, 1024, 16000);
+            Capacity = Mathf.Clamp(Capacity, 1024, 6000);
             _enemies = new Enemy[Capacity];
-            _armyTargets[0] = World.Ground(-90, -85);
-            _armyTargets[1] = World.Ground(115, -90);
+            _cryptSpawnBudgets = new float[Mathf.Max(1, game.Crypts.Count)];
+            _armyTargets[0] = World.VillagePosition(0);
+            _armyTargets[1] = World.VillagePosition(1);
+            _nextAssaultTime = Mathf.Max(15f, game.Balance.AssaultStart);
             Shader shader = Resources.Load<Shader>("HordeBillboard");
             if (shader == null) shader = Shader.Find("HolyHelicopter/HordeBillboard");
             if (shader == null)
@@ -69,15 +96,25 @@ namespace HolyHelicopter
             _sprites = MakeDynamicMesh("One mesh / entire pixel congregation", _material, out _spriteRenderer);
             _shadows = MakeDynamicMesh("One mesh / ground contact shadows", _shadowMaterial, out _shadowRenderer);
 
-            // The first army is visible on the initial route out of Saint Rotor's Abbey.
-            SpawnHorde(World.Ground(-55, -40), 260);
+            // A readable opening encounter leaves room for the first sortie to escalate.
+            int initial = Mathf.Clamp(game.Balance.InitialEnemies, 0, Capacity);
+            int opening = game.Crypts.Count > 0 ? Mathf.RoundToInt(initial * .24f) : initial;
+            Vector3 openingCenter = game.Crypts.Count > 0
+                ? Vector3.Lerp(World.BasePosition, game.Crypts[0].Position, .72f)
+                : World.BasePosition + Vector3.forward * 95f;
+            SpawnHorde(World.Ground(openingCenter.x, openingCenter.z), opening);
+            int remaining = initial - opening;
             for (int i = 0; i < game.Crypts.Count; i++)
             {
-                Vector3 approach = game.Crypts[i].Position;
-                approach.z -= 17f;
-                SpawnHorde(approach, 310);
+                Vector3 site = game.Crypts[i].Position;
+                Vector3 towardBase = World.BasePosition - site;
+                towardBase.y = 0f;
+                Vector3 approach = site + towardBase.normalized * 14f;
+                int population = remaining / (game.Crypts.Count - i);
+                SpawnHorde(approach, population);
+                remaining -= population;
             }
-            SpawnHorde(World.Ground(30, 75), 100);
+            RefreshArmyTargets();
         }
 
         public void Tick(float dt)
@@ -86,27 +123,18 @@ namespace HolyHelicopter
             _frame++;
             Vector3 player = _game.Flight.transform.position;
             float elapsed = _game.Elapsed;
-            _rangedClock = Mathf.Max(0f, _rangedClock - dt);
+            _hexCastClock = Mathf.Max(0f, _hexCastClock - dt);
+            _hexHitClock = Mathf.Max(0f, _hexHitClock - dt);
+            _batHitClock = Mathf.Max(0f, _batHitClock - dt);
             _towerFlash = Mathf.Max(0f, _towerFlash - dt * 4f);
-
-            // Spawn sites exert continuous world pressure; destroying one stops its contribution.
-            _spawnClock += dt;
-            if (_spawnClock >= 1f)
+            _targetClock -= dt;
+            if (_targetClock <= 0f)
             {
-                _spawnClock -= 1f;
+                _targetClock = .7f;
                 RefreshArmyTargets();
-                for (int c = 0; c < _game.Crypts.Count; c++)
-                {
-                    Crypt crypt = _game.Crypts[c];
-                    if (!crypt.Active) continue;
-                    int reinforcements = Mathf.Min(24, 7 + (int)(elapsed / 25f));
-                    for (int n = 0; n < reinforcements && Count < Capacity; n++)
-                    {
-                        Vector2 offset = Random.insideUnitCircle * 11f;
-                        SpawnOne(crypt.Position + new Vector3(offset.x, 0, offset.y), ChooseKind());
-                    }
-                }
             }
+            TickSpawning(dt);
+            DivingBats = 0;
 
             for (int i = 0; i < _count; i++)
             {
@@ -116,23 +144,55 @@ namespace HolyHelicopter
                 enemy.Flash = Mathf.Max(0f, enemy.Flash - dt * 5f);
                 enemy.AttackTime = Mathf.Max(0f, enemy.AttackTime - dt);
                 bool flying = enemy.Kind == EnemyKind.Bat;
+                Vector3 beforeMove = enemy.Position;
                 Vector3 destination;
+                float moveSpeed = enemy.Speed;
                 if (flying)
                 {
-                    // A flying screen circles the aircraft and dives through the canopy.
                     if (horizontalSq < 140f * 140f)
                     {
                         float orbit = elapsed * .65f + enemy.Phase * 21f;
-                        float diveRadius = 8f + Mathf.Sin(elapsed * 1.7f + enemy.Phase * 21f) * 3f;
-                        destination = player + new Vector3(Mathf.Cos(orbit) * diveRadius, Mathf.Sin(orbit * 1.4f) * 2f - 1.5f, Mathf.Sin(orbit) * diveRadius);
+                        float orbitRadius = 16f + Mathf.Sin(elapsed + enemy.Phase * 21f) * 3f;
+                        destination = player + new Vector3(Mathf.Cos(orbit) * orbitRadius,
+                            4f + Mathf.Sin(orbit * 1.4f) * 3f, Mathf.Sin(orbit) * orbitRadius);
+                        if (enemy.AttackState == 0 && enemy.AttackTime <= 0f && horizontalSq < 80f * 80f)
+                        {
+                            enemy.AttackState = 1;
+                            enemy.AttackPhase = .65f;
+                        }
+                        if (enemy.AttackState == 1)
+                        {
+                            enemy.AttackPhase -= dt;
+                            enemy.Flash = .65f + Mathf.Sin(elapsed * 23f) * .25f;
+                            if (enemy.AttackPhase <= 0f)
+                            {
+                                Vector3 intercept = player + _game.Flight.Velocity * .42f + Vector3.up * .5f;
+                                enemy.AttackTarget = intercept + (intercept - enemy.Position).normalized * 16f;
+                                enemy.AttackState = 2;
+                                enemy.AttackPhase = 1.65f;
+                            }
+                        }
+                        if (enemy.AttackState == 2)
+                        {
+                            enemy.AttackPhase -= dt;
+                            destination = enemy.AttackTarget;
+                            moveSpeed = 27f;
+                            DivingBats++;
+                            if (enemy.AttackPhase <= 0f || (destination - enemy.Position).sqrMagnitude < 2f)
+                            {
+                                enemy.AttackState = 0;
+                                enemy.AttackTime = 3.5f + enemy.Phase * 3.5f;
+                            }
+                        }
                     }
                     else
                     {
+                        enemy.AttackState = 0;
                         destination = _armyTargets[enemy.Army];
                         destination.y = enemy.Ground + 12f + Mathf.Sin(elapsed + enemy.Phase * 13f) * 4f;
                     }
                 }
-                else if (horizontalSq < 94f * 94f && elapsed > 3f)
+                else if (horizontalSq < 94f * 94f && elapsed > 3f && enemy.Phase < .74f)
                 {
                     // Fixed individual offsets create a dense moving crowd instead of one coincident point.
                     float angle = enemy.Phase * 107f + elapsed * .035f;
@@ -143,15 +203,19 @@ namespace HolyHelicopter
                 }
                 else
                 {
-                    // Most monsters march on settlements even when the helicopter is elsewhere.
-                    destination = _armyTargets[enemy.Army];
-                    if (enemy.Phase < .13f && elapsed < 110f)
+                    // Civilian targets are cached, so large armies remain independent of the helicopter.
+                    int targets = _civilianTargetCounts[enemy.Army];
+                    destination = targets > 0
+                        ? _civilianTargets[enemy.Army * 16 + Mathf.Min(targets - 1, (int)(enemy.Phase * targets))]
+                        : _armyTargets[enemy.Army];
+                    bool guarding = enemy.Phase < .13f && elapsed < 70f;
+                    if (guarding)
                     {
                         int site = Mathf.Min(_game.Crypts.Count - 1, (int)(enemy.Phase * 31f));
                         if (site >= 0) destination = _game.Crypts[site].Position;
                     }
                     float angle = enemy.Phase * 63f + elapsed * .018f;
-                    float ring = 8f + enemy.Phase * 30f;
+                    float ring = targets > 0 && !guarding ? .5f + enemy.Phase * 2.8f : 8f + enemy.Phase * 22f;
                     destination += new Vector3(Mathf.Cos(angle) * ring, 0f, Mathf.Sin(angle) * ring);
                 }
                 Vector3 move = destination - enemy.Position;
@@ -159,7 +223,7 @@ namespace HolyHelicopter
                 float distanceSq = move.sqrMagnitude;
                 if (distanceSq > .3f)
                 {
-                    float speed = enemy.Speed;
+                    float speed = moveSpeed;
                     if (horizontalSq > 180f * 180f) speed *= .8f;
                     float amount = Mathf.Min(1f, speed * dt / Mathf.Sqrt(distanceSq));
                     enemy.Position += move * amount;
@@ -171,78 +235,192 @@ namespace HolyHelicopter
                 if (!flying) enemy.Position.y = Mathf.Lerp(enemy.Position.y, enemy.Ground, Mathf.Min(1f, dt * 14f));
                 else enemy.Position.y = Mathf.Max(enemy.Position.y, enemy.Ground + 2.5f);
 
-                if (flying && delta.sqrMagnitude < 9f * 9f && enemy.AttackTime <= 0f)
+                if (flying && enemy.AttackState == 2 &&
+                    SegmentDistanceSquared(beforeMove, enemy.Position, player + Vector3.up * .4f) < 2.3f * 2.3f)
                 {
-                    enemy.AttackTime = Random.Range(2.5f, 4f);
-                    // One global gate prevents hundreds of bats doing all their damage in one frame.
-                    if (_rangedClock <= 0f)
+                    enemy.AttackState = 0;
+                    enemy.AttackTime = 4.5f + enemy.Phase * 3f;
+                    if (_batHitClock <= 0f)
                     {
-                        _game.DamagePlayer(2.2f, "BAT SWARM");
-                        _rangedClock = .38f;
+                        _game.DamagePlayer(2.6f, "DIVING BAT");
+                        _batHitClock = .7f;
                     }
                 }
                 else if (enemy.Kind == EnemyKind.Necromancer && horizontalSq < 105f * 105f && enemy.AttackTime <= 0f)
                 {
-                    enemy.AttackTime = Random.Range(5f, 9f);
-                    if (_rangedClock <= 0f && elapsed > 22f)
+                    if (_hexCastClock <= 0f && elapsed > 50f && BeginHex(enemy, player))
                     {
-                        _rangedClock = .9f;
-                        Vector3 from = enemy.Position + Vector3.up * 2.3f;
-                        Vector3 predicted = player + _game.Flight.Velocity * .35f;
-                        _game.Effects.Beam(from, predicted, new Color(.48f, 1f, .38f), .14f, .35f);
-                        // Strafe speed is meaningful protection against their conspicuous green bolts.
-                        if (_game.Flight.Velocity.sqrMagnitude < 220f)
-                            _game.DamagePlayer(2.4f, "NECROMANCER HEX");
+                        _hexCastClock = Mathf.Lerp(2.1f, 1.25f, Escalation);
+                        enemy.AttackTime = Random.Range(6f, 10f);
+                        enemy.Flash = .85f;
                     }
+                    else enemy.AttackTime = .3f + enemy.Phase * .3f;
                 }
                 _enemies[i] = enemy;
             }
             TickTower(dt, player);
             TickBoarders(dt);
-            TickCivilianPressure(dt);
+            TickHexes(dt, player);
+            float towerDanger = TowerCount == 0 ? 0f : Mathf.Clamp01(TowerHeight / Mathf.Max(3f, _game.Flight.Altitude));
+            ThreatLevel = Mathf.Clamp01(Boarders * .1f + towerDanger * .6f + ChargingHexes * .15f +
+                ActiveHexes * .1f + Mathf.Min(DivingBats, 5) * .09f);
+        }
+
+        float Escalation => Mathf.Clamp01(_game.Elapsed / Mathf.Max(30f, _game.Balance.EscalationSeconds));
+
+        void TickSpawning(float dt)
+        {
+            var balance = _game.Balance;
+            float progress = Escalation;
+            SpawnRatePerCrypt = Mathf.Max(0f, Mathf.Lerp(balance.CryptSpawnStart, balance.CryptSpawnPeak,
+                progress * Mathf.Sqrt(progress)));
+            int active = 0;
+            for (int c = 0; c < _game.Crypts.Count; c++)
+            {
+                Crypt crypt = _game.Crypts[c];
+                if (!crypt.Active) { _cryptSpawnBudgets[c] = 0f; continue; }
+                active++;
+                _cryptSpawnBudgets[c] += SpawnRatePerCrypt * dt;
+                int recruits = Mathf.FloorToInt(_cryptSpawnBudgets[c]);
+                _cryptSpawnBudgets[c] -= recruits;
+                for (int n = 0; n < recruits && Count < Capacity; n++)
+                {
+                    Vector2 offset = Random.insideUnitCircle * 11f;
+                    SpawnOne(crypt.Position + new Vector3(offset.x, 0f, offset.y), ChooseKind());
+                    ReinforcementsSpawned++;
+                }
+            }
+            if (_game.Elapsed < _nextAssaultTime) return;
+            float fraction = _game.Crypts.Count == 0 ? 0f : (float)active / _game.Crypts.Count;
+            _nextAssaultTime += Mathf.Max(20f, balance.AssaultInterval) * Mathf.Lerp(1.65f, 1f, fraction);
+            // A frontier still exists after the local crypts are sealed, but its pressure falls sharply.
+            int armySize = Mathf.Max(0, Mathf.RoundToInt(balance.AssaultSize * Mathf.Lerp(.3f, 1f, fraction)));
+            int side = AssaultsLaunched % 3;
+            Vector3 frontier = side == 0 ? new Vector3(-World.Radius * .84f, 0f, World.Radius * .50f)
+                : side == 1 ? new Vector3(World.Radius * .84f, 0f, World.Radius * .38f)
+                : new Vector3(Random.Range(-.4f, .4f) * World.Radius, 0f, World.Radius * .86f);
+            LastAssaultPosition = World.Ground(frontier.x, frontier.z);
+            int before = Count;
+            SpawnHorde(LastAssaultPosition, armySize);
+            int spawned = Count - before;
+            FrontierEnemiesSpawned += spawned;
+            ReinforcementsSpawned += spawned;
+            AssaultsLaunched++;
+            if (spawned > 0)
+                _game.Message("FRONTIER ARMY INBOUND — " + spawned + " monsters marching from the " +
+                    (side == 0 ? "western woods." : side == 1 ? "eastern moor." : "northern ridge."));
         }
 
         void RefreshArmyTargets()
         {
-            // Village destinations remain useful even after its survivors have been rescued.
             for (int village = 0; village < 2; village++)
             {
-                Vector3 center = village == 0 ? World.Ground(-90, -85) : World.Ground(115, -90);
-                float best = 75f * 75f;
+                Vector3 center = World.VillagePosition(village);
+                _armyTargets[village] = center;
+                int count = 0;
                 for (int s = 0; s < _game.Survivors.Count; s++)
                 {
                     Survivor survivor = _game.Survivors[s];
                     if (!survivor.Alive) continue;
-                    float distance = (survivor.Position - center).sqrMagnitude;
-                    if (distance < best) { best = distance; _armyTargets[village] = survivor.Position; }
+                    Vector3 toVillage = survivor.Position - center;
+                    Vector3 toOther = survivor.Position - World.VillagePosition(1 - village);
+                    if (toVillage.sqrMagnitude > toOther.sqrMagnitude || count >= 16) continue;
+                    _civilianTargets[village * 16 + count++] = survivor.Position;
                 }
+                _civilianTargetCounts[village] = count;
             }
         }
 
-        void TickCivilianPressure(float dt)
+        bool BeginHex(Enemy caster, Vector3 player)
         {
-            // Give a new pilot time to discover controls. Damage is capped per civilian,
-            // never multiplied without limit by the thousands of marching skeletons.
-            if (_game.Elapsed < 110f) return;
-            _civilianClock += dt;
-            if (_civilianClock < 1f) return;
-            float interval = _civilianClock;
-            _civilianClock = 0f;
-            for (int s = 0; s < _game.Survivors.Count; s++)
+            Vector3 from = caster.Position + Vector3.up * 2.4f;
+            for (int i = 0; i < _hexes.Length; i++)
             {
-                Survivor survivor = _game.Survivors[s];
-                if (!survivor.Alive) continue;
-                int pressure = CountNear(survivor.Position, 10f);
-                if (pressure < 12) continue;
-                survivor.Health -= Mathf.Min(.8f, pressure * .012f) * interval;
-                if (survivor.Health <= 0f)
+                if (_hexes[i].Active) continue;
+                _hexes[i] = new HexProjectile
                 {
-                    survivor.Health = 0f;
-                    _game.Message("A civilian was lost. Clear the village or winch survivors to safety!");
-                    _game.Effects.Burst(survivor.Position + Vector3.up, new Color(1f, .35f, .2f), 8);
-                    if (survivor.Visual != null) survivor.Visual.gameObject.SetActive(false);
-                }
+                    Active = true, Position = from, Charge = 1.05f, Life = 5.7f, SourceId = caster.Id,
+                    // Lock the prediction now. A pilot who changes course can dodge the entire shot.
+                    Target = player + _game.Flight.Velocity * .42f + Vector3.up * .4f
+                };
+                _game.Effects.Ring(World.Ground(from.x, from.z), 3.4f, new Color(.85f, .4f, 1f), .75f);
+                return true;
             }
+            return false;
+        }
+
+        void TickHexes(float dt, Vector3 player)
+        {
+            _hexVisualClock -= dt;
+            bool visual = _hexVisualClock <= 0f;
+            if (visual) _hexVisualClock = .065f;
+            ActiveHexes = ChargingHexes = 0;
+            NearestHexDistance = float.PositiveInfinity;
+            NearestHexPosition = player;
+            Color chargeColor = new Color(.86f, .36f, 1f), boltColor = new Color(.6f, 1f, .22f);
+            for (int i = 0; i < _hexes.Length; i++)
+            {
+                HexProjectile hex = _hexes[i];
+                if (!hex.Active) continue;
+                hex.Life -= dt;
+                if (hex.Life <= 0f) { hex.Active = false; _hexes[i] = hex; continue; }
+                if (hex.Charge > 0f)
+                {
+                    hex.Charge -= dt;
+                    ChargingHexes++;
+                    if (visual)
+                    {
+                        _game.Effects.Burst(hex.Position, chargeColor, 2, .6f);
+                        _game.Effects.Beam(hex.Position, hex.Target, chargeColor, .045f, .095f);
+                    }
+                    if (hex.Charge <= 0f)
+                    {
+                        hex.Velocity = (hex.Target - hex.Position).normalized * 33f;
+                        _game.Effects.Burst(hex.Position, boltColor, 8, 1f);
+                    }
+                }
+                else
+                {
+                    ActiveHexes++;
+                    Vector3 previous = hex.Position;
+                    hex.Position += hex.Velocity * dt;
+                    if (visual)
+                    {
+                        _game.Effects.Beam(hex.Position - hex.Velocity * .09f, hex.Position, boltColor, .55f, .14f);
+                        _game.Effects.Burst(hex.Position, boltColor, 2, .6f);
+                    }
+                    if (SegmentDistanceSquared(previous, hex.Position, player + Vector3.up * .4f) < 2.1f * 2.1f)
+                    {
+                        hex.Active = false;
+                        if (_hexHitClock <= 0f)
+                        {
+                            _game.DamagePlayer(5.5f, "NECROMANCER HEX");
+                            _hexHitClock = .75f;
+                        }
+                        _game.Effects.Burst(hex.Position, boltColor, 12, 1.2f);
+                    }
+                    else if (hex.Position.y <= World.Height(hex.Position.x, hex.Position.z) + .2f)
+                    {
+                        hex.Active = false;
+                        _game.Effects.Burst(hex.Position, boltColor, 9, .8f);
+                    }
+                }
+                float distance = Vector3.Distance(player, hex.Position);
+                if (hex.Active && distance < NearestHexDistance)
+                {
+                    NearestHexDistance = distance;
+                    NearestHexPosition = hex.Position;
+                }
+                _hexes[i] = hex;
+            }
+        }
+
+        static float SegmentDistanceSquared(Vector3 start, Vector3 end, Vector3 point)
+        {
+            Vector3 segment = end - start;
+            float lengthSquared = segment.sqrMagnitude;
+            float along = lengthSquared < .0001f ? 0f : Mathf.Clamp01(Vector3.Dot(point - start, segment) / lengthSquared);
+            return (point - (start + segment * along)).sqrMagnitude;
         }
 
         void TickTower(float dt, Vector3 player)
@@ -254,7 +432,7 @@ namespace HolyHelicopter
             {
                 Vector3 offset = player - TowerPosition;
                 float horizontalSq = offset.x * offset.x + offset.z * offset.z;
-                if (horizontalSq > 34f * 34f)
+                if (horizontalSq > 29f * 29f)
                 {
                     CollapseTower(false);
                     return;
@@ -262,7 +440,7 @@ namespace HolyHelicopter
                 if (horizontalSq < 10f * 10f && TowerPosition.y + TowerHeight > player.y - 2.5f)
                 {
                     _boardClock += dt;
-                    if (_boardClock >= .7f)
+                    if (_boardClock >= .5f)
                     {
                         _boardClock = 0f;
                         Boarders = Mathf.Min(12, Boarders + 1);
@@ -275,13 +453,14 @@ namespace HolyHelicopter
                     }
                 }
             }
-            if (_stillTime < 3.5f || _game.Flight.Altitude > 55f) return;
+            bool lowHover = _game.Flight.Altitude < 14f;
+            if (_stillTime < (lowHover ? 2.1f : 3.2f) || _game.Flight.Altitude > 55f) return;
             _towerClock += dt;
-            if (_towerClock < .16f) return;
-            _towerClock -= .16f;
+            if (_towerClock < .13f) return;
+            _towerClock -= .13f;
             if (TowerCount == 0)
             {
-                if (CountNear(player, 28f) < 28) return;
+                if (SampleThreat(player, 25f, out _, out _) < (lowHover ? 18 : 28)) return;
                 TowerPosition = World.Ground(player.x, player.z);
                 _towerIntegrity = 150f;
                 if (_game.Elapsed - _towerMessageTime > 16f)
@@ -291,7 +470,7 @@ namespace HolyHelicopter
                 }
             }
             int recruited = 0;
-            for (int i = _count - 1; i >= 0 && recruited < 3 && TowerCount < 188; i--)
+            for (int i = _count - 1; i >= 0 && recruited < 4 && TowerCount < 188; i--)
             {
                 if (_enemies[i].Kind != EnemyKind.Skeleton && _enemies[i].Kind != EnemyKind.Zombie) continue;
                 Vector3 delta = _enemies[i].Position - TowerPosition;
@@ -317,7 +496,7 @@ namespace HolyHelicopter
                     Boarders--;
                     _game.Effects.Burst(_game.Flight.transform.position - Vector3.up * 2f, new Color(.8f, .87f, .6f), 3, .7f);
                 }
-                else _game.DamagePlayer(Mathf.Min(6f, Boarders * .7f), "SKELETON BOARDERS");
+                else _game.DamagePlayer(Mathf.Min(7.5f, Boarders * .95f), "SKELETON BOARDERS");
             }
         }
 
@@ -339,6 +518,37 @@ namespace HolyHelicopter
             }
             Vector3 towerDelta = TowerPosition - point;
             if (TowerCount > 0 && towerDelta.x * towerDelta.x + towerDelta.z * towerDelta.z < radiusSq) count += TowerCount;
+            return count;
+        }
+
+        /// <summary>Ground-only horizontal contact sample for the civilian director; allocates nothing.</summary>
+        public int SampleThreat(Vector3 point, float radius, out Vector3 away, out float nearestDistance)
+        {
+            away = Vector3.zero;
+            nearestDistance = float.PositiveInfinity;
+            if (_enemies == null || radius <= 0f) return 0;
+            float radiusSquared = radius * radius, nearestSquared = float.PositiveInfinity;
+            Vector3 nearestAway = Vector3.zero;
+            int count = 0;
+            for (int i = 0; i < _count; i++)
+            {
+                if (_enemies[i].Kind == EnemyKind.Bat) continue;
+                Vector3 offset = point - _enemies[i].Position;
+                offset.y = 0f;
+                float distanceSquared = offset.sqrMagnitude;
+                if (distanceSquared > radiusSquared) continue;
+                count++;
+                away += offset / Mathf.Max(.25f, distanceSquared);
+                if (distanceSquared < nearestSquared)
+                {
+                    nearestSquared = distanceSquared;
+                    nearestAway = offset;
+                }
+            }
+            if (count == 0) return 0;
+            nearestDistance = Mathf.Sqrt(nearestSquared);
+            if (away.sqrMagnitude < .0001f) away = nearestAway;
+            away = away.normalized;
             return count;
         }
 
@@ -371,11 +581,16 @@ namespace HolyHelicopter
         EnemyKind ChooseKind()
         {
             float roll = Random.value;
-            if (roll < .70f) return EnemyKind.Skeleton;
-            if (roll < .88f) return EnemyKind.Zombie;
-            if (roll < .96f) return EnemyKind.Vampire;
-            if (roll < .987f) return EnemyKind.Bat;
-            return EnemyKind.Necromancer;
+            float progress = Escalation;
+            float threshold = Mathf.Lerp(.86f, .62f, progress);
+            if (roll < threshold) return EnemyKind.Skeleton;
+            threshold += Mathf.Lerp(.11f, .22f, progress);
+            if (roll < threshold) return EnemyKind.Zombie;
+            threshold += Mathf.Lerp(.02f, .10f, progress);
+            if (roll < threshold) return EnemyKind.Vampire;
+            threshold += Mathf.Lerp(.01f, .035f, progress);
+            if (roll < threshold) return EnemyKind.Bat;
+            return _game.Elapsed > 55f ? EnemyKind.Necromancer : EnemyKind.Skeleton;
         }
 
         void SpawnOne(Vector3 position, EnemyKind kind)
@@ -396,7 +611,9 @@ namespace HolyHelicopter
             {
                 Position = position, Ground = ground, Kind = kind, Health = health,
                 Phase = phase, Speed = speed * Random.Range(.82f, 1.2f),
-                Army = (byte)(position.x < 0f ? 0 : 1), AttackTime = Random.Range(3f, 10f)
+                Army = (byte)((position - World.VillagePosition(0)).sqrMagnitude <
+                    (position - World.VillagePosition(1)).sqrMagnitude ? 0 : 1),
+                AttackTime = Random.Range(3f, 10f), Id = ++_nextEnemyId
             };
         }
 
@@ -492,6 +709,10 @@ namespace HolyHelicopter
         {
             Enemy dead = _enemies[index];
             _enemies[index] = _enemies[--_count];
+            if (dead.Kind == EnemyKind.Necromancer)
+                for (int i = 0; i < _hexes.Length; i++)
+                    if (_hexes[i].Active && _hexes[i].Charge > 0f && _hexes[i].SourceId == dead.Id)
+                        _hexes[i].Active = false;
             _game.OnEnemyKilled(dead.Position + Vector3.up * .8f, dead.Kind);
         }
 
