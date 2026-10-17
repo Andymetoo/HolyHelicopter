@@ -1,4 +1,4 @@
-HOLY HELICOPTER - OPERATION MIDNIGHT MASS / PLAYTEST PASS 1
+HOLY HELICOPTER - OPERATION MIDNIGHT MASS / PLAYTEST PASS 2
 
 LAUNCH
 Run Builds/HolyHelicopter/Holy Helicopter.exe. Keep its build folder together.
@@ -8,15 +8,19 @@ No additional packages, paid assets or services are required.
 YOUR FIRST SORTIE
 Press Enter or BEGIN THE EXORCISM. Fly into the valley and follow the roads.
 Start with silver on LMB and holy water on RMB. Water clears ordinary crowds.
-The invasion starts with 380 monsters and builds toward thousands in 3-5 minutes.
+The invasion starts with 650 monsters and builds toward thousands in 3-5 minutes.
 Four remote crypts continuously produce reinforcements. Sealing them matters.
 Stone crypts resist bullets and water; rockets make short work of their masonry.
 Look for mint person symbols and waving people in orange safety vests.
 Slow below 46 ft within 16 metres to winch a civilian. Four passenger seats.
 Civilians flee actual monsters, seek safer paths, and approach a safe hovering heli.
-Carry at least four people home if possible. Casualties reduce the mission rating;
+Carry at least eight of the eighteen people home if possible. Casualties reduce the mission rating;
 a disastrous rescue effort no longer abruptly ends your flight.
-Seal all crypts and deliver the attainable rescue quota, then return home to finish.
+Breach all four crypts, hook their golden seals, and deliver the attainable rescue
+quota and seals to Sanctuary. Seals do not use passenger seats. Expect retaliation.
+The parish spans 2.2 km, with three villages, wooded ridges and river crossings.
+Use G for a north-up chart; click a destination or supply cache to set your course.
+Right-click the chart for automatic objective guidance. The world stays live.
 
 CONTROLS
 WASD         Move relative to helicopter heading
@@ -26,11 +30,17 @@ Wheel        Change held altitude
 LMB / RMB    Fire assigned weapons, including both together
 Tab          Free cursor / return to flight
 Click an unlocked icon with LMB or RMB to assign that trigger
-Escape       Pause; sensitivity, invert-Y and audio settings
+Escape       Pause; sensitivity, invert-Y, cockpit motion and audio settings
 H            Field manual
 M            Mute / unmute
+G            Open / close navigation chart
 R            Restart after victory or defeat
 F            Reserved
+
+The helicopter accelerates to 23 m/s over about 2.7 seconds. Releasing the controls
+brakes over roughly 23 metres. Reverse thrust and heading changes preserve momentum.
+Aim remains stabilized as the cockpit pitches and banks. Turning is rate-limited;
+lead moving targets and allow room to slow down for rescues.
 
 SUPPLY RUNS AND UPGRADES
 Fly below 46 ft across cargo boxes or fuel drums to hook them automatically.
@@ -39,16 +49,25 @@ Supplies refill 55% ammunition for owned weapons, 45 fuel, 40 hull or 35 salvage
 Full-resource crates stay put. Enemy supply drops are limited and need-biased.
 Return to the gold Saint Rotor helipad below 36 ft and slow down for free service.
 Press Tab at home to open the armory. Every unlocked weapon stays available.
-Ordinary kills pay one salvage per eight; necromancers pay two extra.
+Ordinary kills pay one salvage per eight; necromancers and gargoyles pay two extra.
 Crypts pay 100. Delivered civilians pay 45 each.
 Rockets cost 260, UV costs 420, Rapture costs 550. Upgrades compete for salvage.
 Full fuel lasts about four minutes at continuous cruise, longer while hovering.
+Secure villages provide field repair up to 70 hull at their mint crosses. A sustained
+occupation breaks the ward and closes field aid; clearing the streets reclaims it.
+Sheltered residents emerge when you approach low, their shelter expires, or the
+village falls. Clearing an approaching army gives them a better chance to survive.
 
 THREATS AND CONSEQUENCES
 Moving or climbing shakes boarders off. Low stationary hovering invites towers.
 Shoot a tower to trigger a bone avalanche, or move away before it reaches you.
 Bats telegraph diving attacks. Necromancers charge and fire actual traveling hexes;
 change direction after the warning, or kill the caster during its charge.
+Crypt sentinels charge predictive three-bolt salvos. Any hit interrupts their charge.
+Gargoyles chase at 28 m/s and dive at 38 m/s: straight flight will not outrun them.
+Watch amber lines and listen for the warning tone. Change course/altitude after the
+attack locks, then shoot during recovery. Silver hits stagger their committed attack.
+Breached crypts release pursuers; retrieving a seal is part of the encounter.
 Altitude protects against ordinary ground melee; specialized enemies can reach you.
 Orange reticle warnings flag civilians inside your selected rocket/shockwave blast.
 Friendly fire remains lethal near a rocket impact. Water is safer, not harmless.
@@ -72,7 +91,7 @@ Default horde cap: 6,000. Batched sprites and fixed effect pools are preserved.
 OPT-IN VALIDATION (NOT NORMAL PLAY)
 -holy-smoke-test -holy-report "<absolute report.json>"
 -holy-smoke-test -holy-stress validates a controlled 3,000-monster combat sample.
--holy-balance-test -holy-report "<absolute report.json>" runs two five-minute worlds.
+-holy-balance-test -holy-report "<absolute report.json>" runs two ten-minute worlds.
 -holy-mission-test -holy-report "<absolute report.json>" flies a scripted mission.
 -holy-ui-test -holy-ui-directory "<absolute directory>" captures four UI resolutions.
 Use -batchmode -nographics for gameplay-only tests, never for screenshots/FPS.

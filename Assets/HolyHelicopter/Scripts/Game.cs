@@ -18,12 +18,14 @@ namespace HolyHelicopter
         public Hud Hud;
         public BalanceProfile Balance;
         public CivilianDirector Civilians;
+        public SettlementDirector Settlements;
         public readonly List<Crypt> Crypts = new List<Crypt>();
         public readonly List<Survivor> Survivors = new List<Survivor>();
         public readonly List<Supply> Supplies = new List<Supply>();
         public float Hull = 100f, Fuel = 100f, Elapsed;
         public int Salvage, Kills, Rescued, CivilianLosses, Sortie = 1;
-        public int RequiredRescues = 4, Passengers, Combo, BestCombo, SuppliesCollected;
+        public int RequiredRescues = 8, Passengers, Combo, BestCombo, SuppliesCollected;
+        public int RelicsAboard, RelicsDelivered;
         public bool Started, Paused, GameOver, Won, CursorFree = true;
         public bool ShowHelp, ShowDebug, ExtractionCompleted;
         public string LastMessage = "Saint Rotor is standing by.", DeathReason = "", RescueTarget = "";
@@ -31,7 +33,7 @@ namespace HolyHelicopter
         public bool AtBase => Flight && HorizontalDistance(Flight.transform.position, HolyHelicopter.World.BasePosition) < 18f && Flight.Altitude < 11f && Flight.Velocity.magnitude < 8f;
         public int ActiveCrypts { get { int n = 0; foreach (var c in Crypts) if (c.Active) n++; return n; } }
         public int ExtractionQuota { get { int remaining = Rescued + Passengers; foreach (var s in Survivors) if (s.Alive) remaining++; return Mathf.Min(RequiredRescues, remaining); } }
-        public bool CanExtract => ActiveCrypts == 0 && Rescued + Passengers >= ExtractionQuota;
+        public bool CanExtract => ActiveCrypts == 0 && RelicsAboard + RelicsDelivered == Crypts.Count && Rescued + Passengers >= ExtractionQuota;
         public string MissionGrade => CivilianLosses == 0 && Rescued >= RequiredRescues ? "PARISH SAVED" : CivilianLosses <= 2 && Rescued >= RequiredRescues ? "COSTLY VICTORY" : "PYRRHIC VICTORY";
         public bool IsWinching(Survivor survivor) => winchTarget == survivor;
         readonly HashSet<Survivor> notifiedDeaths = new HashSet<Survivor>();
@@ -43,7 +45,7 @@ namespace HolyHelicopter
         Supply hookedSupply;
         Vector3 previousSupplyPosition;
         bool lowFuelWarned, criticalFuelWarned;
-        readonly Color[] supplyColors = { new Color(.47f,.81f,1), new Color(1,.73f,.17f), new Color(.45f,1,.64f), new Color(.84f,.53f,1) };
+        readonly Color[] supplyColors = { new Color(.47f,.81f,1), new Color(1,.73f,.17f), new Color(.45f,1,.64f), new Color(.84f,.53f,1), new Color(1,.95f,.45f) };
 
         void Awake()
         {
@@ -64,6 +66,7 @@ namespace HolyHelicopter
             Arsenal = Child<Arsenal>("05 • Ministry of excessive force"); Arsenal.Initialize(this);
             Horde = Child<Horde>("06 • The restless congregation"); Horde.Initialize(this);
             Civilians = Child<CivilianDirector>("Civilian flight and rescue signals"); Civilians.Initialize(this);
+            Settlements = Child<SettlementDirector>("Parish defense and field aid"); Settlements.Initialize(this);
             Hud = Child<Hud>("07 • Cockpit instrumentation"); Hud.Initialize(this);
             MakeSupplies();
             cable = new GameObject("Automatic rescue winch").AddComponent<LineRenderer>();
@@ -74,7 +77,7 @@ namespace HolyHelicopter
             cable.enabled = false;
             previousSupplyPosition = Flight.transform.position;
             Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
-            Message("OPERATION MIDNIGHT MASS — four crypts. Four souls. One very loud helicopter.");
+            Message("OPERATION MIDNIGHT MASS — four seals. Eight souls. One very loud helicopter.");
         }
 
         T Child<T>(string name) where T : Component
@@ -91,14 +94,23 @@ namespace HolyHelicopter
 
         // One simulation entry point shared by ordinary play and opt-in mission validation.
         public void Step(float dt, bool acceptInput = false)
+            => StepInternal(dt, acceptInput, false, Vector2.zero, 0, 0, 0);
+
+        // Validation pilots use exactly the same thrust/yaw controls as a human pilot.
+        public void StepCommand(float dt, Vector2 movement, float climb, float yawDelta, float lookDelta = 0)
+            => StepInternal(dt, false, true, movement, climb, yawDelta, lookDelta);
+
+        void StepInternal(float dt, bool acceptInput, bool commanded, Vector2 movement, float climb, float yawDelta, float lookDelta)
         {
             if (!Started || Paused || GameOver || dt <= 0) return;
             Elapsed += dt;
             killEffectBudget = 90;
-            Flight.Tick(dt, acceptInput);
+            if (commanded) Flight.TickCommand(dt, movement, climb, yawDelta, lookDelta);
+            else Flight.Tick(dt, acceptInput);
             Arsenal.Tick(dt, acceptInput);
             Horde.Tick(dt);
             Civilians.Tick(dt);
+            Settlements.Tick(dt);
             TickFuel(dt);
             if (Fuel <= 0) DamagePlayer(dt * 1.5f, "Fuel exhausted. A helicopter is a very expensive gravestone.");
             if (Time.time - lastKill > 2.5f) Combo = 0;
@@ -124,9 +136,10 @@ namespace HolyHelicopter
                 return;
             }
             if (keys.escapeKey.wasPressedThisFrame) TogglePause();
-            if (keys.tabKey.wasPressedThisFrame && !Paused) SetCursor(!CursorFree);
+            if (keys.tabKey.wasPressedThisFrame && !Paused) { Hud.ShowChart = false; SetCursor(!CursorFree); }
             if (keys.hKey.wasPressedThisFrame) ShowHelp = !ShowHelp;
             if (keys.mKey.wasPressedThisFrame) Audio.Muted = !Audio.Muted;
+            if (keys.gKey.wasPressedThisFrame && !Paused) { Hud.ShowChart = !Hud.ShowChart; SetCursor(Hud.ShowChart); }
             if (keys.f3Key.wasPressedThisFrame) ShowDebug = !ShowDebug;
             if (keys.f6Key.wasPressedThisFrame)
             {
@@ -153,7 +166,7 @@ namespace HolyHelicopter
         {
             if (Started) return;
             Started = true; SetCursor(false);
-            Message("PILOT: follow the valley. Purge distant crypts. Winch waving civilians below 46 ft.");
+            Message("PILOT: G opens your chart. Rescue eight souls. Breach crypts, hook their golden seals, bring everything home.");
             Audio.Play(SoundCue.Rescue, .6f);
         }
 
@@ -161,7 +174,7 @@ namespace HolyHelicopter
         {
             if (!Started || GameOver) return;
             Paused = !Paused;
-            SetCursor(Paused);
+            SetCursor(Paused || Hud.ShowChart);
         }
 
         public void SetCursor(bool free)
@@ -226,7 +239,7 @@ namespace HolyHelicopter
             Kills++;
             salvageKills++;
             if (salvageKills >= Mathf.Max(1, Balance.KillsPerSalvage)) { Salvage += salvageKills / Mathf.Max(1, Balance.KillsPerSalvage); salvageKills %= Mathf.Max(1, Balance.KillsPerSalvage); }
-            if (kind == EnemyKind.Necromancer) Salvage += Balance.EliteSalvage;
+            if (kind == EnemyKind.Necromancer || kind == EnemyKind.Gargoyle) Salvage += Balance.EliteSalvage;
             Combo = Time.time - lastKill < 2.5f ? Combo + 1 : 1;
             BestCombo = Mathf.Max(BestCombo, Combo); lastKill = Time.time;
             ConfirmHit();
@@ -269,7 +282,9 @@ namespace HolyHelicopter
                     Audio.Play(SoundCue.Crypt, 1);
                     SpawnSupply(crypt.Position + Vector3.right * 8, SupplyKind.Ammo);
                     SpawnSupply(crypt.Position - Vector3.right * 8, SupplyKind.Repair);
-                    Message(crypt.Name.ToUpperInvariant() + " SEALED. +" + Balance.CryptSalvage + " salvage. Local reinforcements stopped.");
+                    SpawnSupply(crypt.Position, SupplyKind.Relic).SourceCrypt = crypt;
+                    Horde.OnCryptDestroyed(crypt);
+                    Message(crypt.Name.ToUpperInvariant() + " BREACHED! Hook its golden seal below 46 ft. Winged defenders inbound.");
                 }
             }
             // Blasts do not distinguish civilians. Water is safer, but not harmless.
@@ -324,6 +339,12 @@ namespace HolyHelicopter
                     Message("SURVIVORS DELIVERED — " + Rescued + "/" + RequiredRescues + " safe. +" + Balance.RescueSalvage + " salvage per soul.");
                     Audio.Play(SoundCue.Rescue, .8f);
                 }
+                if (RelicsAboard > 0)
+                {
+                    RelicsDelivered += RelicsAboard; RelicsAboard = 0;
+                    Message("SEALS SECURED AT SANCTUARY: " + RelicsDelivered + "/4. The parish is taking its night back.");
+                    Audio.Play(SoundCue.Crypt, .5f);
+                }
                 serviceTimer += dt;
             }
             else serviceTimer = 0;
@@ -349,21 +370,24 @@ namespace HolyHelicopter
 
         void MakeSupplies()
         {
-            SpawnSupply(HolyHelicopter.World.Ground(-48,-202), SupplyKind.Ammo);
-            SpawnSupply(HolyHelicopter.World.Ground(-181,-119), SupplyKind.Fuel);
-            SpawnSupply(HolyHelicopter.World.Ground(-188,-60), SupplyKind.Salvage);
-            SpawnSupply(HolyHelicopter.World.Ground(171,-172), SupplyKind.Repair);
-            SpawnSupply(HolyHelicopter.World.Ground(159,26), SupplyKind.Ammo);
-            SpawnSupply(HolyHelicopter.World.Ground(-98,196), SupplyKind.Fuel);
-            SpawnSupply(HolyHelicopter.World.Ground(182,-120), SupplyKind.Ammo);
-            SpawnSupply(HolyHelicopter.World.Ground(-166,128), SupplyKind.Repair);
-            SpawnSupply(HolyHelicopter.World.Ground(88,128), SupplyKind.Salvage);
-            SpawnSupply(HolyHelicopter.World.Ground(26,-42), SupplyKind.Fuel);
+            for (int i = 0; i < HolyHelicopter.World.VillageCount; i++)
+            {
+                Vector3 p = HolyHelicopter.World.VillagePosition(i);
+                SpawnSupply(HolyHelicopter.World.Ground(p.x + 48, p.z - 35), SupplyKind.Fuel);
+                SpawnSupply(HolyHelicopter.World.Ground(p.x + 58, p.z - 22), SupplyKind.Ammo);
+            }
+            SpawnSupply(HolyHelicopter.World.Ground(-450,-390), SupplyKind.Repair);
+            SpawnSupply(HolyHelicopter.World.Ground(440,610), SupplyKind.Fuel);
+            SpawnSupply(HolyHelicopter.World.Ground(-550,540), SupplyKind.Fuel);
+            SpawnSupply(HolyHelicopter.World.Ground(650,-470), SupplyKind.Ammo);
+            SpawnSupply(HolyHelicopter.World.Ground(-280,60), SupplyKind.Salvage);
+            SpawnSupply(HolyHelicopter.World.Ground(420,-640), SupplyKind.Repair);
         }
 
-        public void SpawnSupply(Vector3 position, SupplyKind kind)
+        public Supply SpawnSupply(Vector3 position, SupplyKind kind)
         {
-            if (ActiveSupplies() >= 28) return;
+            if (kind != SupplyKind.Relic && ActiveSupplies() >= 28) return null;
+            position = HolyHelicopter.World.Ground(position.x, position.z);
             var holder = new GameObject(kind + " supply / automatic hook").transform;
             holder.SetParent(World.transform); holder.position = position;
             var dark = HolyHelicopter.World.Mat("Supply dark casing", new Color(.055f,.085f,.085f));
@@ -372,7 +396,14 @@ namespace HolyHelicopter
             for (int band = -1; band <= 1; band += 2)
                 HolyHelicopter.World.Shape(PrimitiveType.Cube, "Cargo straps", holder, position + new Vector3(band * 1.1f, 2.55f, 0), new Vector3(.35f,.16f,3.7f), light);
             HolyHelicopter.World.Shape(PrimitiveType.Cube, "Supply landing patch", holder, position + Vector3.up * .08f, new Vector3(5.5f,.09f,5.5f), light);
-            Supplies.Add(new Supply { Position = position, Kind = kind, Visual = holder });
+            if (kind == SupplyKind.Relic)
+            {
+                HolyHelicopter.World.Shape(PrimitiveType.Cube, "Golden seal cross", holder, position + Vector3.up * 5, new Vector3(.65f,5,.65f), light);
+                HolyHelicopter.World.Shape(PrimitiveType.Cube, "Golden seal arms", holder, position + Vector3.up * 6, new Vector3(3,.65f,.65f), light);
+            }
+            var supply = new Supply { Position = position, Kind = kind, Visual = holder };
+            Supplies.Add(supply);
+            return supply;
         }
 
         int ActiveSupplies() { int n = 0; foreach (var s in Supplies) if (!s.Collected) n++; return n; }
@@ -421,11 +452,16 @@ namespace HolyHelicopter
                 case SupplyKind.Repair: Hull = Mathf.Min(100, Hull + Balance.RepairCrate); break;
                 case SupplyKind.Ammo: Arsenal.Refill(Balance.AmmoCrateFraction); break;
                 case SupplyKind.Salvage: Salvage += Balance.CrateSalvage; break;
+                case SupplyKind.Relic:
+                    RelicsAboard++;
+                    if (cargo.SourceCrypt != null) cargo.SourceCrypt.RelicRecovered = true;
+                    break;
             }
             Audio.Play(SoundCue.Pickup, .8f);
             Effects.Ring(cargo.Position, 7, supplyColors[(int)cargo.Kind], .45f);
             Message("HOOK SECURED — " + (cargo.Kind == SupplyKind.Ammo ? "+55% ammo for owned weapons" : cargo.Kind == SupplyKind.Salvage ? "+" + Balance.CrateSalvage + " salvage" : cargo.Kind.ToString().ToUpperInvariant() + " replenished") + ". Keep flying!");
             Supplies.Remove(cargo); hookedSupply = null;
+            if (cargo.Kind == SupplyKind.Relic) Message("GOLDEN SEAL ABOARD: " + (RelicsAboard + RelicsDelivered) + "/4. Deliver to Sanctuary. Cargo does not use rescue seats.");
         }
 
         void TickRescue(float dt)

@@ -1,0 +1,70 @@
+HOLY HELICOPTER - PLAYTEST PASS 2
+
+IMPLEMENTED
+Thrust-limited flight, momentum through turns, deliberate braking, angular yaw
+acceleration, cockpit pitch/bank/acceleration lag and engine-load rotor audio.
+Weapons retain a stabilized aim solution. ESC exposes a cockpit-motion slider.
+
+A 2.2 km parish with three villages, river crossings, wooded ridges and remote
+crypts. G opens the navigation chart; click destinations/supplies to set a course.
+Eighteen civilians, staged shelter, village occupation, reclaiming and field aid.
+Deliver eight people and four physical crypt seals. Seals use no passenger seats.
+
+Crypt sentinels fire interruptible predictive salvos. Gargoyles pursue faster than
+cruise, warn audibly, lock a committed attack path, then recover at a readable
+distance. Destroying crypts provokes retaliation, including at the population cap.
+Existing weapons, trigger assignments, crowd destruction, supplies, friendly fire,
+towers, boarding, base service and session upgrades remain integrated.
+
+BEFORE / AFTER
+Forward cruise:               30 -> 23 m/s (18 strafe,14 reverse)
+95% cruise:                   about0.86s old response -> measured2.62s
+Released-control stop:        about6m old exponential travel ->22.8m /1.85s
+Yaw:                          instantaneous ->100deg/s maximum,240deg/s2 acceleration
+Playable map width:           920m ->2200m
+Base-to-crypt distances:      294-601m ->797-1719m
+Cruise-only direct travel:    10-20s ->35-75s, before acceleration/terrain/combat
+Civilians / rescue objective: 8 /4 ->18 /8, plus four recovered seals
+Opening population:           380 ->650
+Unlock costs:                 unchanged: rockets260,UV420,Rapture550
+Ordinary kill salvage:        unchanged: one per eight
+
+GAMEPLAY VALIDATION
+New pilot uses actual thrust/yaw/altitude commands and real weapons, ammunition,
+fuel, pickups and purchases. No teleports, injected velocity or resource grants.
+It retains perfect map/target knowledge, so it is not a human enjoyment test.
+Completed operation in9:11: four seals, eight delivered, four civilian casualties,
+612 kills,15 pickups,four sorties,9.62km traveled,5155 peak enemies.
+Minimum hull45%, fuel45.3%; rockets earned at2:56.
+Previous2:32 pilot used ideal immediate steering, so timings are not directly comparable.
+
+Identical24-second opposition scenarios (three gargoyles/two sentinels):
+Stationary hover: destroyed after13.4s.
+Straight flight: 70 hull damage over521m.
+Warning-driven evasion: 28 hull damage over422m.
+Priority targeting and climbing for line of sight: allfive cleared,22 damage,98 rounds.
+
+Passive world tests: all18 civilians remain healthy through120s.
+At300s, four active crypts produce4446 enemies; two sealed sites yield2524.
+At600s, complete neglect overruns allthree villages. Two sealed sites allow
+Wicker's End to recover fully and four civilians to survive.
+
+FINAL WINDOWS BUILD
+Builds/HolyHelicopter/Holy Helicopter.exe - keep the entire folder together.
+Unity6000.4.1f1 / URP17.4.0. Existing scene and asset identities preserved.
+Final desktop build passed50 integration/flight/combat checks with no runtime errors.
+Controlled3000-enemy active-combat sample: about118FPS across360 rendered frames
+on the available RTX3050 Laptop GPU, with120FPS application cap. Not a sustained
+or cross-hardware benchmark. Horde-only simulation at6000: about1.66ms/tick.
+Balance suite passed18 checks. Fifteen UI captures cover576p,720p,900p,1080p,
+armory,chart,warning encounter,pause,manual and countryside.
+
+Reports/screenshots are in Logs/HolyHelicopter-pass2-*-final* and Logs/Pass2-UI-final.
+Controls and tuning notes: PLAY_HOLY_HELICOPTER.txt.
+
+REMAINING LIMITS
+Human playtesting still needs to judge handling comfort, warning readability and
+whether the encounter rhythm stays enjoyable. The opposition has meaningful roles
+but limited attack variety. Ground navigation, shelter and village damage remain
+lightweight abstractions. One tower at a time; no general scenery collision or
+universal destruction, and no persistent campaign. No further implementation is pending.

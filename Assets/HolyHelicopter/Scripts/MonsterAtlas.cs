@@ -6,6 +6,7 @@ namespace HolyHelicopter
     internal static class MonsterAtlas
     {
         const int W = 32, H = 40;
+        public const int Columns = 6;
         static readonly Color32 Bone = new Color32(222, 226, 180, 255);
         static readonly Color32 BoneShadow = new Color32(123, 155, 153, 255);
         static readonly Color32 Ink = new Color32(23, 29, 49, 255);
@@ -13,13 +14,13 @@ namespace HolyHelicopter
 
         public static Texture2D Create()
         {
-            var atlas = new Texture2D(W * 5, H * 4, TextureFormat.RGBA32, false)
+            var atlas = new Texture2D(W * Columns, H * 4, TextureFormat.RGBA32, false)
             {
                 name = "Original pixel monster atlas", filterMode = FilterMode.Point,
                 wrapMode = TextureWrapMode.Clamp, anisoLevel = 0
             };
-            var pixels = new Color32[W * 5 * H * 4];
-            for (int kind = 0; kind < 5; kind++)
+            var pixels = new Color32[W * Columns * H * 4];
+            for (int kind = 0; kind < Columns; kind++)
             for (int frame = 0; frame < 4; frame++)
             {
                 var cell = new Color32[W * H];
@@ -32,6 +33,7 @@ namespace HolyHelicopter
                     case EnemyKind.Vampire: Vampire(cell, step, bob); break;
                     case EnemyKind.Bat: Bat(cell, frame); break;
                     case EnemyKind.Necromancer: Necromancer(cell, step, bob); break;
+                    case EnemyKind.Gargoyle: Gargoyle(cell, frame); break;
                 }
                 // A one-pixel cool dark outline keeps crowds legible against the grass.
                 var outline = (Color32[])cell.Clone();
@@ -45,7 +47,7 @@ namespace HolyHelicopter
                 }
                 for (int y = 0; y < H; y++)
                 for (int x = 0; x < W; x++)
-                    pixels[(frame * H + y) * W * 5 + kind * W + x] = outline[y * W + x];
+                    pixels[(frame * H + y) * W * Columns + kind * W + x] = outline[y * W + x];
             }
             atlas.SetPixels32(pixels);
             atlas.Apply(false, true);
@@ -140,6 +142,34 @@ namespace HolyHelicopter
             Line(p, 25, 3, 25, 32, new Color32(156, 124, 95, 255), 2);
             Rect(p, 22, 31, 7, 6, Bone); Rect(p, 23, 33, 2, 2, Ink); Dot(p, 27, 34, Ink);
             Rect(p, 24, 37, 3, 2, trim); Line(p, 21, 22, 26, 20, trim, 2);
+        }
+
+        static void Gargoyle(Color32[] p, int frame)
+        {
+            Color32 stone = new Color32(142, 154, 178, 255), shadow = new Color32(66, 77, 109, 255);
+            Color32 edge = new Color32(202, 208, 204, 255), ember = new Color32(255, 145, 42, 255);
+            int lift = frame == 0 ? 7 : frame == 2 ? -5 : 2;
+            // Broad stone wings, two horns, massive shoulders and a glowing chest distinguish it from bats.
+            for (int x = 1; x < 31; x++)
+            {
+                int outward = Mathf.Abs(16 - x);
+                int top = 25 + lift * outward / 15;
+                int bottom = 17 - outward / 4 + (x % 6 == 0 ? 3 : 0);
+                Rect(p, x, bottom, 1, Mathf.Max(1, top - bottom), shadow);
+                Dot(p, x, top, edge);
+                if (x % 5 == 0) Line(p, x, bottom, 16, 25, stone, 1);
+            }
+            Rect(p, 10, 14, 13, 13, stone);
+            Rect(p, 9, 23, 15, 5, edge);
+            Rect(p, 12, 27, 9, 8, stone);
+            Line(p, 12, 32, 9, 37, edge, 2); Line(p, 20, 32, 23, 37, edge, 2);
+            Rect(p, 12, 30, 3, 2, ember); Rect(p, 18, 30, 3, 2, ember);
+            Rect(p, 14, 27, 5, 2, Ink); Dot(p, 14, 28, Bone); Dot(p, 18, 28, Bone);
+            Rect(p, 14, 17, 5, 8, shadow); Rect(p, 15, 19, 3, 5, ember); Dot(p, 16, 23, Eyes);
+            Line(p, 10, 23, 7, 14, stone, 3); Line(p, 21, 23, 25, 14, stone, 3);
+            Line(p, 12, 15, 11, 8, stone, 3); Line(p, 19, 15, 21, 8, stone, 3);
+            Line(p, 11, 8, 8, 5, edge, 2); Line(p, 21, 8, 25, 5, edge, 2);
+            Line(p, 16, 13, 19, 5, shadow, 2); Line(p, 19, 5, 17, 2, shadow, 2);
         }
 
         static void Dot(Color32[] p, int x, int y, Color32 color)

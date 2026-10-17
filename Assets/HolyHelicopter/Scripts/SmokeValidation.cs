@@ -92,7 +92,7 @@ namespace HolyHelicopter
                 Require(game.World && game.Flight && game.Arsenal && game.Horde && game.Hud, "A gameplay subsystem is missing.");
                 Require(game.Horde.Count == game.Balance.InitialEnemies, "Initial population does not match the balance profile: " + game.Horde.Count);
                 Require(game.Crypts.Count == 4 && game.ActiveCrypts == 4, "Expected four active crypts.");
-                Require(game.Survivors.Count == 8, "Expected eight survivors.");
+                Require(game.Survivors.Count == 18, "Expected eighteen survivors across three settlements.");
                 Require(game.Supplies.Count >= 8, "Initial supply network is missing.");
                 report.initialEnemies = game.Horde.Count;
             });
@@ -151,6 +151,7 @@ namespace HolyHelicopter
             }
 
             Check("Terrain clearance, altitude limits and velocity", CheckFlight);
+            FlightValidation.Run(game, (name, passed, detail) => AddResult(name, passed, detail, 0));
             Check("Analytic terrain aiming", CheckAim);
             Check("Crypts require travel beyond base weapon range", CheckCryptTravel);
             Check("Crowd salvage cannot buy the entire armory immediately", CheckEconomy);
@@ -158,13 +159,14 @@ namespace HolyHelicopter
             Check("Rocket friendly-fire warning, falloff and casualty policy", CheckFriendlyFire);
             Check("Ammo replenishes only owned weapons", CheckAmmo);
             ThreatValidation.Run(game, (name, passed, detail) => AddResult(name, passed, detail, 0));
+            CombatOppositionValidation.Run(game, (name, passed, detail) => AddResult(name, passed, detail, 0));
             Check("Horde capacity and area damage accounting", CheckCrowd);
             Check("Stationary swarm builds a destructible skeleton tower", CheckTower);
             Check("High/low supply hooking and full-resource preservation", CheckSupplies);
             Check("Full-speed swept supply capture", CheckMovingSupply);
             Check("Interrupted rescue resets its target and visual", CheckRescueInterruption);
             Check("Rescue capacity, passenger delivery and base service", CheckRescueAndBase);
-            Check("Four crypts plus four delivered civilians complete mission", CheckVictory);
+            Check("Four recovered seals and eight delivered civilians complete mission", CheckVictory);
             yield return null;
             Finish();
         }
@@ -178,10 +180,7 @@ namespace HolyHelicopter
             Vector3 position = World.Ground(target.x + 14, target.z - 49) + Vector3.up * 24f;
             game.Flight.Teleport(position);
             Vector3 direction = target - position;
-            game.Flight.transform.rotation = Quaternion.Euler(0, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg, 0);
-            game.Flight.Camera.transform.rotation = Quaternion.LookRotation(direction);
-            typeof(FlightController).GetField("yaw", InstanceMembers).SetValue(game.Flight, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg);
-            typeof(FlightController).GetField("pitch", InstanceMembers).SetValue(game.Flight, -Mathf.Asin(direction.normalized.y) * Mathf.Rad2Deg);
+            game.Flight.SetAim(Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg, -Mathf.Asin(direction.normalized.y) * Mathf.Rad2Deg);
             Shader.SetGlobalVector("_HolyLampPosition", new Vector4(position.x, position.y, position.z, 1));
             Shader.SetGlobalVector("_HolyLampDirection", direction.normalized);
             game.Arsenal.Tick(0, false);
@@ -307,14 +306,17 @@ namespace HolyHelicopter
             for (int i = 0; i < 600; i++) game.Flight.Tick(1f / 60, false);
             Require(game.Flight.Altitude <= 58.05f, "Maximum altitude clamp did not settle.");
             game.Flight.Teleport(World.Ground(-20, 50) + Vector3.up * 3.4f);
-            typeof(FlightController).GetProperty("Velocity", InstanceMembers).SetValue(game.Flight, new Vector3(27, 0, 15));
+            game.Flight.SetAim(61, 19);
+            for (int i = 0; i < 240; i++) game.Flight.TickCommand(1f/60, Vector2.up, 0, 0);
             for (int i = 0; i < 120; i++)
             {
                 Vector3 before = game.Flight.transform.position;
                 game.Flight.Tick(1f / 60, false);
                 Vector3 measured = (game.Flight.transform.position - before) * 60;
                 Require(game.Flight.Altitude >= 3.39f, "Look-ahead flight penetrated terrain.");
-                Require((measured - game.Flight.Velocity).sqrMagnitude < .02f, "Reported velocity differs from actual displacement.");
+                Vector2 planarError = new Vector2(measured.x-game.Flight.Velocity.x,measured.z-game.Flight.Velocity.z);
+                float tolerance = .5f * Mathf.Max(game.Flight.ThrustAcceleration,game.Flight.ReleaseBraking)/60f+.03f;
+                Require(planarError.magnitude < tolerance, "Instantaneous velocity disagrees with substepped planar displacement.");
             }
             game.Flight.Teleport(World.Ground(45, 65) + Vector3.up * 25);
             Vector3 hover = game.Flight.transform.position;
@@ -327,12 +329,12 @@ namespace HolyHelicopter
             for (int i = 0; i < 18; i++)
             {
                 Vector3 origin = World.Ground(-270 + i * 29, 260 - i * 11) + Vector3.up * 37;
-                Vector3 hit = game.Arsenal.TraceAim(origin, Vector3.down, 100);
+                Vector3 hit = game.Arsenal.TraceAim(origin, Vector3.down, 100, false);
                 Require(Mathf.Abs(hit.y - World.Height(hit.x, hit.z) - .2f) < .08f, "Downward aiming missed analytic terrain.");
             }
             Crypt crypt = game.Crypts[0];
             Vector3 start = crypt.Position + new Vector3(0, 3, -35);
-            Vector3 contact = game.Arsenal.TraceAim(start, Vector3.forward, 100);
+            Vector3 contact = game.Arsenal.TraceAim(start, Vector3.forward, 100, false);
             Require(Vector3.Distance(contact, crypt.Position + Vector3.up * 3) <= 5.1f, "Crypt aiming volume was not hit.");
         }
 
@@ -387,7 +389,8 @@ namespace HolyHelicopter
             far.Position = World.Ground(impact.x + 32, impact.z);
             near.Health = far.Health = 100;
             game.Flight.Teleport(impact + new Vector3(0, 25, -55));
-            game.Flight.Camera.transform.rotation = Quaternion.LookRotation(impact + Vector3.up - game.Flight.Camera.transform.position);
+            Vector3 aim = (impact + Vector3.up - game.Flight.AimOrigin).normalized;
+            game.Flight.SetAim(Mathf.Atan2(aim.x,aim.z)*Mathf.Rad2Deg,-Mathf.Asin(aim.y)*Mathf.Rad2Deg);
             game.Arsenal.Weapons[2].Cooldown = 0;
             game.Arsenal.Tick(0, false);
             Require(game.Arsenal.FriendlyFireRisk, "Rocket aim failed to warn about a civilian in its blast.");
@@ -570,6 +573,26 @@ namespace HolyHelicopter
                 game.DamageWorld(crypt.Position + Vector3.up * 2.5f, 5, 10000, DamageKind.Rocket);
                 Require(!crypt.Active && (crypt.Glow == null || !crypt.Glow.gameObject.activeSelf), "Crypt did not shut down when destroyed: " + crypt.Name);
             }
+            Require(!game.CanExtract, "Destroyed crypts alone bypass seal recovery and rescue quota.");
+            var seals = game.Supplies.FindAll(s => s.Kind == SupplyKind.Relic && !s.Collected);
+            Require(seals.Count == 4, "Each crypt must release one recoverable seal.");
+            foreach(var seal in seals)
+            {
+                game.Flight.Teleport(seal.Position + Vector3.up * 8);
+                Invoke(game,"TickSupplies",1f);
+                Require(seal.Collected && seal.SourceCrypt.RelicRecovered, "Low flyover failed to recover the crypt's seal.");
+            }
+            game.Flight.Teleport(World.BasePosition + Vector3.up * 6);
+            Invoke(game,"TickBase",1f);
+            Require(game.RelicsDelivered == 4 && game.RelicsAboard == 0, "Seal cargo was not unloaded at base.");
+            for (int i=4;i<8;i++)
+            {
+                game.Survivors[i].Rescued=false;
+                game.Flight.Teleport(game.Survivors[i].Position + Vector3.up * 6);
+                Invoke(game,"TickRescue",2f);
+            }
+            game.Flight.Teleport(World.BasePosition + Vector3.up * 6);
+            Invoke(game,"TickBase",1f);
             Require(game.ActiveCrypts == 0 && game.Rescued >= game.RequiredRescues && game.CanExtract, "Completed mission prerequisites were not recognized.");
             game.Flight.Teleport(World.BasePosition + Vector3.up * 6);
             game.SetCursor(true);

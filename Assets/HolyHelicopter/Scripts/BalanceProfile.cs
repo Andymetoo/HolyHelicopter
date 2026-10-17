@@ -6,7 +6,7 @@ namespace HolyHelicopter
     public sealed class BalanceProfile : ScriptableObject
     {
         [Header("Invasion (seconds and monsters / second / crypt)")]
-        [Min(0)] public int InitialEnemies = 380;
+        [Min(0)] public int InitialEnemies = 650;
         [Min(30)] public float EscalationSeconds = 240;
         [Min(0)] public float CryptSpawnStart = 1.2f;
         [Min(0)] public float CryptSpawnPeak = 4.5f;

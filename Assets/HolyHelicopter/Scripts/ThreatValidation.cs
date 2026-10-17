@@ -48,6 +48,7 @@ namespace HolyHelicopter
                     fixture.Add(EnemyKind.Necromancer, World.Ground(center.x + 12, center.z), .3f, 20f);
                     fixture.Add(EnemyKind.Bat, center + new Vector3(.5f, 12f, 0), .4f, 20f);
                     fixture.Add(EnemyKind.Bat, center + new Vector3(-.5f, 25f, 0), .5f, 20f);
+                    fixture.Add(EnemyKind.Gargoyle, center + new Vector3(1f, 25f, 0), .6f, 20f);
                     int count = game.Horde.SampleThreat(center, 10f, out Vector3 away, out float nearest);
                     Require(count == 2, "Expected two ground contacts; got " + count + ".");
                     Require(Mathf.Abs(nearest - 3f) < .01f, "Nearest contact should be the skeleton at 3 m.");
@@ -257,10 +258,11 @@ namespace HolyHelicopter
                 foreach (string name in new[]
                 {
                     "_targetClock", "_towerClock", "_stillTime", "_towerIntegrity", "_boardClock", "_shakeClock",
-                    "_hexCastClock", "_hexHitClock", "_batHitClock", "_hexVisualClock", "_towerFlash"
+                    "_hexCastClock", "_hexHitClock", "_batHitClock", "_heavyHitClock", "_hexVisualClock", "_towerFlash"
                 }) Set(horde, name, 0f);
                 Set(horde, "_nextAssaultTime", float.MaxValue);
-                foreach (string name in new[] { "Boarders", "TowerCount", "ChargingHexes", "ActiveHexes", "DivingBats" })
+                foreach (string name in new[] { "Boarders", "TowerCount", "ChargingHexes", "ActiveHexes", "DivingBats",
+                    "EngagedGargoyles", "DivingGargoyles", "ChargingGargoyles" })
                     Set(horde, "<" + name + ">k__BackingField", 0);
                 Set(horde, "<ThreatLevel>k__BackingField", 0f);
                 foreach (Crypt crypt in game.Crypts) crypt.Health = 0f;

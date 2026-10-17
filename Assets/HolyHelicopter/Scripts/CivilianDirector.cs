@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace HolyHelicopter
 {
-    /// <summary>Eight inexpensive people: flee real nearby monsters, seek a safe helicopter, and wave for rescue.</summary>
+    /// <summary>People shelter behind parish wards, flee real nearby monsters, and seek a safe rescue helicopter.</summary>
     public sealed class CivilianDirector : MonoBehaviour
     {
         Game game;
@@ -30,6 +30,21 @@ namespace HolyHelicopter
             {
                 Survivor person=game.Survivors[i];
                 if(!person.Alive) { person.Velocity=Vector3.zero;continue; }
+                if(person.Sheltered)
+                {
+                    bool breached=game.Settlements!=null && game.Settlements.Sites!=null && game.Settlements.Sites[person.Village].Overrun;
+                    bool pilotCommitted=game.Flight.Altitude<35 && Game.HorizontalDistance(helicopter,World.VillagePosition(person.Village))<100;
+                    if(game.Elapsed>=person.ShelterUntil || breached || pilotCommitted || person.Health<person.LastHealth-.01f)
+                    {
+                        person.Sheltered=false;person.ThinkTimer=0;
+                    }
+                    else
+                    {
+                        person.Velocity=Vector3.zero;person.LastHealth=person.Health;
+                        Animate(person,dt,false,false);
+                        continue;
+                    }
+                }
                 person.HitCooldown=Mathf.Max(0,person.HitCooldown-dt);
                 person.PanicSeconds=Mathf.Max(0,person.PanicSeconds-dt);
                 if(person.Health<person.LastHealth-.01f)person.PanicSeconds=Mathf.Max(person.PanicSeconds,1.25f);
@@ -80,7 +95,7 @@ namespace HolyHelicopter
                 else if(threatened)
                 {
                     desired=person.EscapeDirection;
-                    if(desired.sqrMagnitude<.01f)desired=Flat(person.Position-World.VillagePosition(i/4)).normalized;
+                    if(desired.sqrMagnitude<.01f)desired=Flat(person.Position-World.VillagePosition(person.Village)).normalized;
                     if(desired.sqrMagnitude<.01f)desired=new Vector3(Mathf.Sin(i*2.1f),0,Mathf.Cos(i*2.1f));
                     speed=game.Balance.CivilianSpeed;
                 }

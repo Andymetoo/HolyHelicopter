@@ -7,11 +7,15 @@ namespace HolyHelicopter
     /// <summary>Deterministic countryside. Static scenery is packed into a handful of meshes.</summary>
     public sealed class World : MonoBehaviour
     {
-        public const float Radius = 460f;
-        static readonly Vector2[] CryptSites = { new Vector2(-260, -60), new Vector2(225, 90), new Vector2(-175, 285), new Vector2(275, -185) };
-        static readonly Vector2[] Villages = { new Vector2(-110, -135), new Vector2(125, -80) };
-        static readonly float[] CryptHeights = { 7, 15, 23, 9 };
-        public static readonly Vector3 BasePosition = Ground(0, -290);
+        public const float Radius = 1100f;
+        public const int VillageCount = 3;
+        const int TerrainGrid=200;
+        const float TerrainExtent=1260;
+        static readonly Vector2[] CryptSites = { new Vector2(-660, -250), new Vector2(620, 180), new Vector2(-480, 790), new Vector2(760, -620) };
+        static readonly Vector2[] Villages = { new Vector2(-230, -520), new Vector2(430, -300), new Vector2(-250, 300) };
+        static readonly string[] VillageNames = { "WICKER'S END", "LITTLE MOURNING", "BELLWETHER HOLLOW" };
+        static readonly float[] CryptHeights = { 12, 26, 42, 17 };
+        public static readonly Vector3 BasePosition = Ground(0, -860);
         struct Footprint { public Vector2 Center, HalfSize; public float Sin, Cos; }
         static readonly List<Footprint> footprints = new List<Footprint>();
         static readonly Color GroundColor = new Color(0.12f, 0.22f, 0.20f);
@@ -28,14 +32,18 @@ namespace HolyHelicopter
 
         public static float Height(float x, float z)
         {
-            float h = 5f + 7f * Mathf.Sin(x * 0.017f) * Mathf.Cos(z * 0.014f)
-                + 5f * Mathf.Sin(z * 0.024f + x * 0.008f) + 2f * Mathf.Cos(x * 0.042f - z * 0.021f);
-            // Broad wooded ridges interrupt long shooting lanes. Two saddles carry the road network.
-            h += 34f * Crest(x - 65f - z * .18f, 60f) * Crest(z - 25f, 330f) * (1f - .72f * Crest(z - 55f, 45f));
-            h += 26f * Crest(z - 70f - x * .35f, 70f) * Crest(x + 120f, 330f) * (1f - .65f * Crest(x + 70f, 45f));
-            h = Plateau(h, x, z, 0, -290, 47, 75, 3);
-            for(int i=0;i<Villages.Length;i++) h = Plateau(h, x, z, Villages[i].x, Villages[i].y, 54, 80, i==0?5:8);
-            for(int i=0;i<CryptSites.Length;i++) h = Plateau(h, x, z, CryptSites[i].x, CryptSites[i].y, 29, 52, CryptHeights[i]);
+            float h = 10f + 13f * Mathf.Sin(x * .007f) * Mathf.Cos(z * .006f)
+                + 9f * Mathf.Sin(z * .009f + x * .003f) + 2.5f * Mathf.Cos(x * .025f - z * .015f);
+            // Long wooded ridges create regions and road saddles, rather than a scaled flat arena.
+            h += 51f * Crest(x - 145f - z * .19f, 140f) * Crest(z - 60f, 840f) * (1f - .80f * Crest(z + 125f, 95f));
+            h += 43f * Crest(z - 160f - x * .28f, 160f) * Crest(x + 260f, 750f) * (1f - .76f * Crest(x + 170f, 80f));
+            h += 54f * Crest(z-940,270) * Crest(x+150,800);
+            float river=Crest(z-RiverZ(x),30)*Crest(x,1190);
+            float crossing=Mathf.Max(Crest(x+170,22),Crest(x-360,22));
+            h=Mathf.Lerp(h,-1.2f,river*(1-crossing*.94f));
+            h = Plateau(h, x, z, 0, -860, 48, 82, 3);
+            for(int i=0;i<Villages.Length;i++) h = Plateau(h, x, z, Villages[i].x, Villages[i].y, 68, 108, i==0?7:i==1?13:24);
+            for(int i=0;i<CryptSites.Length;i++) h = Plateau(h, x, z, CryptSites[i].x, CryptSites[i].y, 32, 65, CryptHeights[i]);
             return h;
         }
 
@@ -46,9 +54,14 @@ namespace HolyHelicopter
             Vector2 p=Villages[Mathf.Clamp(index,0,Villages.Length-1)];return Ground(p.x,p.y);
         }
 
+        public static string VillageName(int index)=>VillageNames[Mathf.Clamp(index,0,VillageNames.Length-1)];
+        public static Vector3 CryptPosition(int index){Vector2 p=CryptSites[Mathf.Clamp(index,0,CryptSites.Length-1)];return Ground(p.x,p.y);}
+        public static float RiverZ(float x)=>-65+75*Mathf.Sin(x*.0032f);
+
         public static bool CivilianWalkable(Vector3 position,float clearance=1f)
         {
             if(Mathf.Abs(position.x)>Radius-20 || Mathf.Abs(position.z)>Radius-20)return false;
+            if(Mathf.Abs(position.z-RiverZ(position.x))<18 && Mathf.Abs(position.x+170)>20 && Mathf.Abs(position.x-360)>20)return false;
             foreach(Footprint footprint in footprints)
             {
                 Vector2 d=new Vector2(position.x,position.z)-footprint.Center;
@@ -70,6 +83,20 @@ namespace HolyHelicopter
         }
 
         public static Vector3 Ground(float x, float z) => new Vector3(x, Height(x, z), z);
+
+        /// <summary>Exact rendered height, including the mesh's a-to-c diagonal in each terrain cell.</summary>
+        public static float SurfaceHeight(float x,float z)
+        {
+            if(x < -TerrainExtent || x > TerrainExtent || z < -TerrainExtent || z > TerrainExtent)return Height(x,z);
+            float step=TerrainExtent*2/TerrainGrid;
+            int ix=Mathf.Clamp(Mathf.FloorToInt((x+TerrainExtent)/step),0,TerrainGrid-1);
+            int iz=Mathf.Clamp(Mathf.FloorToInt((z+TerrainExtent)/step),0,TerrainGrid-1);
+            float left=-TerrainExtent+ix*step,back=-TerrainExtent+iz*step;
+            float u=Mathf.Clamp01((x-left)/step),v=Mathf.Clamp01((z-back)/step);
+            float a=Height(left,back),c=Height(left+step,back+step);
+            if(v>=u)return a*(1-v)+Height(left,back+step)*(v-u)+c*u;
+            return a*(1-u)+c*v+Height(left+step,back)*(u-v);
+        }
 
         public static Material Mat(string name, Color color, bool emission = false)
         {
@@ -113,7 +140,7 @@ namespace HolyHelicopter
             scenery = new MeshBatch(); luminous = new MeshBatch();
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = .0048f;
+            RenderSettings.fogDensity = .0026f;
             RenderSettings.fogColor = new Color(.012f,.024f,.042f);
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(.4f,.49f,.62f);
@@ -124,19 +151,20 @@ namespace HolyHelicopter
             moon.type=LightType.Directional; moon.color=new Color(.59f,.73f,1f); moon.intensity=.6f;
             moon.transform.rotation=Quaternion.Euler(48,-35,0); moon.shadows=LightShadows.None;
             BuildTerrain();
-            Road(new Vector2(0,-290),new Vector2(0,-205),7);
-            Road(new Vector2(0,-205),Villages[0],6);
-            Road(new Vector2(0,-205),Villages[1],6);
-            Road(Villages[0],new Vector2(-210,-145),4);Road(new Vector2(-210,-145),CryptSites[0],4);
-            Road(Villages[1],new Vector2(225,-125),4);Road(new Vector2(225,-125),CryptSites[3],4);
-            Road(new Vector2(0,-205),new Vector2(-35,-50),5);Road(new Vector2(-35,-50),new Vector2(15,55),5);
-            Road(new Vector2(15,55),new Vector2(130,55),5);Road(new Vector2(130,55),CryptSites[1],4);
-            Road(new Vector2(15,55),new Vector2(-75,150),4);Road(new Vector2(-75,150),CryptSites[2],4);
+            RoadRoute(7,new Vector2(0,-860),new Vector2(-35,-690),Villages[0]);
+            RoadRoute(6,new Vector2(-35,-690),new Vector2(175,-590),Villages[1]);
+            RoadRoute(5,Villages[0],new Vector2(-440,-445),new Vector2(-560,-360),CryptSites[0]);
+            RoadRoute(5,Villages[1],new Vector2(620,-450),CryptSites[3]);
+            RoadRoute(6,Villages[0],new Vector2(-195,-300),new Vector2(-170,RiverZ(-170)),new Vector2(-170,155),Villages[2]);
+            RoadRoute(6,Villages[1],new Vector2(360,-140),new Vector2(360,RiverZ(360)),new Vector2(450,95),CryptSites[1]);
+            RoadRoute(4,Villages[2],new Vector2(-360,530),CryptSites[2]);
+            RoadRoute(4,Villages[2],new Vector2(50,420),new Vector2(300,300),CryptSites[1]);
             BuildBase();
             for(int i=0;i<Villages.Length;i++) BuildVillage(game,Villages[i],i);
             string[] names={"BONE ORCHARD", "ST. ROT'S ABBEY", "WIDOW'S REST", "THE BLACK CHOIR"};
             for(int i=0;i<CryptSites.Length;i++) BuildCrypt(game,CryptSites[i],names[i],i);
             BuildForests();
+            BuildWaypoints();
             BuildCastle();
             scenery.Create("Countryside — batched architecture & trees",transform,Mat("Moonlit palette",Color.white));
             luminous.Create("Windows, runes & lamps",transform,Mat("Lanterns",Color.white,true));
@@ -159,8 +187,8 @@ namespace HolyHelicopter
         void BuildTerrain()
         {
             var mesh=new MeshBatch();
-            const int count=184;
-            const float extent=550;
+            const int count=TerrainGrid;
+            const float extent=TerrainExtent;
             float step=extent*2/count;
             for(int z=0;z<count;z++) for(int x=0;x<count;x++)
             {
@@ -172,10 +200,17 @@ namespace HolyHelicopter
                 mesh.Triangle(a,b,c,col); mesh.Triangle(a,c,d,col*.97f);
             }
             mesh.Create("Rolling countryside",transform,Mat("Earth",Color.white));
+            // A winding river and wet banks visibly divide the southern villages from the northern parish.
+            for(float x=-1120;x<1120;x+=10)
+            {
+                float a=RiverZ(x),b=RiverZ(x+10),width=8+Mathf.Sin(x*.018f)*2;
+                scenery.Quad(new Vector3(x,.35f,a-width),new Vector3(x,.35f,a+width),new Vector3(x+10,.35f,b+width),new Vector3(x+10,.35f,b-width),new Color(.065f,.17f,.20f));
+                if(((int)x)%40==0)luminous.Line(new Vector3(x,.38f,a),new Vector3(x+6,.38f,b),.14f,new Color(.16f,.29f,.29f));
+            }
             // Glints along a shallow swamp on the eastern edge.
             for(int i=0;i<9;i++)
             {
-                float x=350+R(-10,18),z=135+i*13;
+                float x=880+R(-10,18),z=230+i*17;
                 scenery.Disc(Ground(x,z)+Vector3.up*.09f,R(7,13),12,new Color(.09f,.19f,.22f));
                 for(int n=0;n<7;n++)
                 {
@@ -183,6 +218,11 @@ namespace HolyHelicopter
                     scenery.Line(Ground(rx,rz),Ground(rx,rz)+new Vector3(R(-.5f,.5f),R(1,2.5f),0),.08f,new Color(.23f,.27f,.20f));
                 }
             }
+        }
+
+        void RoadRoute(float width,params Vector2[] points)
+        {
+            for(int i=1;i<points.Length;i++)Road(points[i-1],points[i],width);
         }
 
         void Road(Vector2 start,Vector2 end,float width)
@@ -214,7 +254,7 @@ namespace HolyHelicopter
                 luminous.Box(l,new Vector3(.5f,.25f,.5f),Gold);
             }
             // Fortified church, raised sanctuary, and a hangar beside the landing area.
-            Vector3 church=Ground(0,-322);
+            Vector3 church=Ground(p.x,p.z-32);
             scenery.Box(church+new Vector3(0,5,0),new Vector3(13,10,21),Stone);
             scenery.Roof(church+Vector3.up*10,15,24,6,new Color(.13f,.19f,.24f));
             scenery.Box(church+new Vector3(0,12,8),new Vector3(6,24,6),DarkStone);
@@ -228,25 +268,25 @@ namespace HolyHelicopter
                 luminous.Box(w,new Vector3(.10f,3,1.4f),new Color(.76f,.48f,.16f));
                 scenery.Box(w+new Vector3(i*.1f,0,0),new Vector3(.12f,.2f,1.5f),Iron);
             }
-            scenery.Box(Ground(-27,-305)+Vector3.up*4,new Vector3(15,8,22),new Color(.16f,.22f,.27f));
-            scenery.Roof(Ground(-27,-305)+Vector3.up*8,17,24,2,DarkStone);
-            scenery.Box(Ground(-27,-293.8f)+Vector3.up*3.5f,new Vector3(12,7,.15f),Iron);
-            Label("SAINT ROTOR AIR SANCTUARY",Ground(0,-261)+Vector3.up*6, .75f,Gold);
+            scenery.Box(Ground(p.x-27,p.z-15)+Vector3.up*4,new Vector3(15,8,22),new Color(.16f,.22f,.27f));
+            scenery.Roof(Ground(p.x-27,p.z-15)+Vector3.up*8,17,24,2,DarkStone);
+            scenery.Box(Ground(p.x-27,p.z-3.8f)+Vector3.up*3.5f,new Vector3(12,7,.15f),Iron);
+            Label("SAINT ROTOR AIR SANCTUARY",Ground(p.x,p.z+29)+Vector3.up*6, .75f,Gold);
             for(int i=0;i<4;i++)
             {
-                Vector3 q=Ground(i%2==0?-37:37,i<2?-343:-260);
+                Vector3 q=Ground(p.x+(i%2==0?-37:37),p.z+(i<2?-53:30));
                 scenery.Box(q+Vector3.up*3.5f,new Vector3(5,7,5),Stone);
                 scenery.Cone(q+Vector3.up*7,3.5f,2,4,DarkStone,45);
                 luminous.Cross(q+Vector3.up*10,2.4f,Gold);
             }
-            Wall(new Vector2(-37,-343),new Vector2(37,-343),3.1f);
-            Wall(new Vector2(-37,-343),new Vector2(-37,-260),3.1f);
-            Wall(new Vector2(37,-343),new Vector2(37,-260),3.1f);
-            Wall(new Vector2(-37,-260),new Vector2(-13,-260),3.1f);
-            Wall(new Vector2(13,-260),new Vector2(37,-260),3.1f);
+            Wall(new Vector2(p.x-37,p.z-53),new Vector2(p.x+37,p.z-53),3.1f);
+            Wall(new Vector2(p.x-37,p.z-53),new Vector2(p.x-37,p.z+30),3.1f);
+            Wall(new Vector2(p.x+37,p.z-53),new Vector2(p.x+37,p.z+30),3.1f);
+            Wall(new Vector2(p.x-37,p.z+30),new Vector2(p.x-13,p.z+30),3.1f);
+            Wall(new Vector2(p.x+13,p.z+30),new Vector2(p.x+37,p.z+30),3.1f);
             for(int i=0;i<5;i++)
             {
-                Vector3 q=Ground(23+(i%2)*5,-297+(i/2)*6);
+                Vector3 q=Ground(p.x+23+(i%2)*5,p.z-7+(i/2)*6);
                 scenery.Box(q+Vector3.up*1.6f,new Vector3(3.2f,3.2f,3.2f),new Color(.23f,.29f,.25f));
                 luminous.Cross(q+new Vector3(0,1.7f,1.65f),1.4f,Cyan);
             }
@@ -272,26 +312,33 @@ namespace HolyHelicopter
             scenery.Cone(c+Vector3.up*1.5f,1.8f,1.8f,10,DarkStone);
             scenery.Disc(c+Vector3.up*3.35f,1.5f,10,new Color(.1f,.34f,.4f));
             BlockFootprint(c,6,6);
-            Label(index==0?"WICKER'S END":"LITTLE MOURNING",c+new Vector3(0,7,-13),.65f,Cyan);
+            Label(VillageName(index),c+new Vector3(0,8,-13),.85f,Cyan);
             for(int i=0;i<8;i++)
             {
                 float angle=i*Mathf.PI/4+.2f;
-                Vector2 q=center+new Vector2(Mathf.Sin(angle),Mathf.Cos(angle))*42;
+                Vector2 q=center+new Vector2(Mathf.Sin(angle),Mathf.Cos(angle))*55;
                 House(Ground(q.x,q.y),R(6,9),R(6,10),R(5,8),-angle*Mathf.Rad2Deg+R(-8,8),i+index);
             }
-            for(int i=0;i<4;i++)
+            for(int i=0;i<6;i++)
             {
-                float a=i*Mathf.PI*.5f+.55f+R(-.12f,.12f),radius=R(28,35);
+                float a=i*Mathf.PI/3+.55f+R(-.10f,.10f),radius=R(37,45);
                 Vector3 pos=Ground(c.x+Mathf.Sin(a)*radius,c.z+Mathf.Cos(a)*radius);
                 // Widely separated quadrants prevent one rocket from erasing an entire village.
-                if(!CivilianWalkable(pos,2))pos=Ground(c.x+Mathf.Sin(a)*24,c.z+Mathf.Cos(a)*24);
-                BuildCivilian(game,pos,i+index*4);
+                if(!CivilianWalkable(pos,2))pos=Ground(c.x+Mathf.Sin(a)*33,c.z+Mathf.Cos(a)*33);
+                BuildCivilian(game,pos,index,i);
             }
             for(int i=0;i<4;i++)
             {
                 Vector3 q=c+new Vector3(i<2?-12:12,0,i%2==0?-12:12);
                 Lamp(q,4,Warm);
             }
+            Vector3 aid=Ground(c.x+15,c.z-18);
+            // Open-sided aid shelter: a visible safe hovering spot, without another building obstacle.
+            scenery.Disc(aid+Vector3.up*.15f,9,12,new Color(.16f,.25f,.23f));
+            for(int side=-1;side<=1;side+=2)
+                for(int end=-1;end<=1;end+=2)scenery.Box(aid+new Vector3(side*6,2.5f,end*4),new Vector3(.25f,5,.25f),Stone);
+            scenery.Roof(aid+Vector3.up*5,13,9,2,new Color(.23f,.36f,.32f));
+            luminous.Cross(aid+new Vector3(0,6,-4.6f),2.4f,Cyan);
         }
 
         void House(Vector3 p,float w,float d,float h,float angle,int variant)
@@ -317,8 +364,9 @@ namespace HolyHelicopter
             Pumpkin(p+r*new Vector3(w*.6f,.5f,d*.65f),R(.65f,1));
         }
 
-        void BuildCivilian(Game game,Vector3 position,int index)
+        void BuildCivilian(Game game,Vector3 position,int village,int slot)
         {
+            int index=village*6+slot;
             var root=new GameObject("Civilian "+(index+1)+" — mint beacon / rescue winch").transform;
             root.SetParent(transform);root.position=position;
             var body=new GameObject("Animated person").transform;body.SetParent(root,false);
@@ -356,7 +404,8 @@ namespace HolyHelicopter
             var ring=new MeshBatch();ring.Ring(position+Vector3.up*.14f,1.8f,.15f,20,new Color(.3f,1,.68f));
             Transform groundMarker=ring.Create("Civilian ground ring",root,Mat("Civilian ring",Color.white,true)).transform;
             game.Survivors.Add(new Survivor { Position=position,Home=position,Visual=root,Body=body,Head=head,LeftArm=leftArm,RightArm=rightArm,
-                LeftLeg=leftLeg,RightLeg=rightLeg,Beacon=beacon,GroundMarker=groundMarker,Phase=R(0,Mathf.PI*2),ThinkTimer=index*.025f });
+                LeftLeg=leftLeg,RightLeg=rightLeg,Beacon=beacon,GroundMarker=groundMarker,Phase=R(0,Mathf.PI*2),ThinkTimer=index*.025f,
+                Village=village,Sheltered=village>0 || slot>=4,ShelterUntil=village==0?240:village==1?360:540 });
         }
 
         static Transform Joint(Transform parent,string name,Vector3 position)
@@ -478,13 +527,15 @@ namespace HolyHelicopter
 
         void BuildForests()
         {
-            Vector2[] centers={new Vector2(-340,-185),new Vector2(-330,145),new Vector2(310,270),new Vector2(95,315),new Vector2(65,-15),new Vector2(-30,165),new Vector2(175,-260),new Vector2(-190,65),new Vector2(370,-70)};
+            Vector2[] centers={new Vector2(-500,-690),new Vector2(-810,-380),new Vector2(-480,-100),new Vector2(-860,200),
+                new Vector2(-670,530),new Vector2(-200,665),new Vector2(100,600),new Vector2(410,750),new Vector2(800,440),
+                new Vector2(770,-100),new Vector2(940,-450),new Vector2(465,-650),new Vector2(100,-410),new Vector2(100,165)};
             for(int cluster=0;cluster<centers.Length;cluster++) for(int i=0;i<70;i++)
             {
-                float a=R(0,Mathf.PI*2),r=Mathf.Sqrt(R(0,1))*74;
+                float a=R(0,Mathf.PI*2),r=Mathf.Sqrt(R(0,1))*155;
                 Vector2 q=centers[cluster]+new Vector2(Mathf.Sin(a),Mathf.Cos(a))*r;
                 if(NearSite(q))continue;
-                Vector3 p=Ground(q.x,q.y);float h=R(7,18);
+                Vector3 p=Ground(q.x,q.y);float h=R(13,27);
                 if(i%4==0) BareTree(p,h);
                 else
                 {
@@ -496,10 +547,10 @@ namespace HolyHelicopter
                 if(i%12==0) scenery.Cone(p+new Vector3(2,0,3),R(1,3),R(1,3),5,Stone*.65f,R(0,90));
             }
             // Sparse foreground trees keep the roads and swarms legible.
-            for(int i=0;i<40;i++)
+            for(int i=0;i<70;i++)
             {
-                Vector2 q=new Vector2(R(-410,410),R(-350,410));
-                if(!NearSite(q)) BareTree(Ground(q.x,q.y),R(8,13));
+                Vector2 q=new Vector2(R(-1010,1010),R(-980,1020));
+                if(!NearSite(q)) BareTree(Ground(q.x,q.y),R(12,21));
             }
         }
 
@@ -507,7 +558,8 @@ namespace HolyHelicopter
         {
             if(Vector2.Distance(q,new Vector2(BasePosition.x,BasePosition.z))<70)return true;
             foreach(Vector2 p in CryptSites)if(Vector2.Distance(q,p)<48)return true;
-            foreach(Vector2 p in Villages)if(Vector2.Distance(q,p)<61)return true;
+            foreach(Vector2 p in Villages)if(Vector2.Distance(q,p)<80)return true;
+            if(Mathf.Abs(q.y-RiverZ(q.x))<37)return true;
             return false;
         }
 
@@ -527,9 +579,73 @@ namespace HolyHelicopter
             }
         }
 
+        void BuildWaypoints()
+        {
+            // Two stone causeways cross the river; their lamps make a readable route through the fog.
+            foreach(float x in new float[]{-170,360})
+            {
+                float z=RiverZ(x),height=Height(x,z)+.18f;
+                Vector3 p=new Vector3(x,height,z);
+                scenery.Box(p+Vector3.down*.7f,new Vector3(13,1.4f,46),Stone);
+                for(int side=-1;side<=1;side+=2)
+                {
+                    scenery.Box(p+new Vector3(side*6.2f,.7f,0),new Vector3(.7f,1.4f,46),DarkStone);
+                    for(int n=-1;n<=1;n++)
+                    {
+                        scenery.Box(new Vector3(x+side*4.5f,height*.5f,z+n*17),new Vector3(3,height,4),DarkStone);
+                        Lamp(p+new Vector3(side*6.2f,0,n*20),4.8f,Warm);
+                    }
+                }
+            }
+            Vector3 mill=Ground(-180,-685);
+            scenery.Cone(mill,6,17,8,new Color(.32f,.30f,.28f));
+            scenery.Cone(mill+Vector3.up*17,7,7,6,new Color(.24f,.16f,.25f));
+            Vector3 hub=mill+new Vector3(0,17,-6.3f);
+            for(int n=0;n<4;n++)
+            {
+                float a=n*Mathf.PI*.5f+.45f;
+                Vector3 tip=hub+new Vector3(Mathf.Sin(a),Mathf.Cos(a),0)*14;
+                scenery.Line(hub,tip,.55f,DarkStone);
+                Vector3 spread=new Vector3(Mathf.Cos(a),-Mathf.Sin(a),0)*1.8f;
+                scenery.Quad(hub+Vector3.Lerp(Vector3.zero,tip-hub,.4f)-spread,tip-spread,tip+spread,hub+Vector3.Lerp(Vector3.zero,tip-hub,.4f)+spread,new Color(.42f,.40f,.33f));
+            }
+            luminous.Box(mill+new Vector3(0,4,-5.7f),new Vector3(1.5f,2.3f,.1f),Warm);
+            Label("THE LAST LIGHT MILL",mill+Vector3.up*27,.72f,Warm);
+            House(Ground(65,-355),14,19,8,-15,2);
+            Label("CROW & COFFIN INN",Ground(65,-355)+Vector3.up*17,.7f,Warm);
+            RoadRoute(3,new Vector2(65,-355),new Vector2(110,-430),new Vector2(175,-590));
+            Vector3 watch=Ground(25,565);
+            for(int n=0;n<4;n++)scenery.Line(watch+new Vector3(n%2==0?-4:4,0,n<2?-4:4),watch+new Vector3(n%2==0?-3:3,21,n<2?-3:3),.7f,DarkStone);
+            scenery.Box(watch+Vector3.up*21,new Vector3(9,1,9),Stone);
+            scenery.Roof(watch+Vector3.up*26,11,11,4,DarkStone);
+            luminous.Box(watch+Vector3.up*24,new Vector3(2.2f,1.6f,2.2f),Warm);
+            for(int n=0;n<3;n++)
+            {
+                float y=6+n*6;
+                scenery.Line(watch+new Vector3(-4,y-5,-4),watch+new Vector3(4,y,-4),.35f,Stone);
+                scenery.Line(watch+new Vector3(4,y-5,-4),watch+new Vector3(-4,y,-4),.35f,Stone);
+            }
+            Vector3 cross=Ground(-760,415);
+            scenery.Cone(cross,17,7,7,DarkStone);
+            scenery.Cross(cross+Vector3.up*23,29,new Color(.34f,.39f,.4f),25);
+            luminous.Cross(cross+new Vector3(0,23,-1.7f),26,new Color(.27f,.36f,.34f),25);
+            // Low stone field boundaries draw large-scale perspective without concealing infantry.
+            for(int n=0;n<7;n++)
+            {
+                float z=-740+n*30;
+                Wall(new Vector2(-390,z),new Vector2(-300,z),.8f);
+                for(int hay=0;hay<3;hay++)scenery.Cone(Ground(-378+hay*32,z+12),3,2.8f,7,new Color(.27f,.28f,.19f));
+            }
+            Vector3 ruin=Ground(610,30);
+            scenery.Box(ruin+Vector3.up*3,new Vector3(18,6,13),DarkStone);
+            scenery.Roof(ruin+Vector3.up*6,20,15,5,new Color(.24f,.19f,.23f));
+            for(int n=0;n<4;n++)scenery.Box(ruin+new Vector3(-10+n*7,1.1f,-15),new Vector3(2.3f,2.2f,9),new Color(.24f,.22f,.18f),90);
+            Label("MOURNING SAWMILL",ruin+Vector3.up*15,.7f,Warm);
+        }
+
         void BuildCastle()
         {
-            Vector3 p=Ground(30,470);
+            Vector3 p=Ground(30,1160);
             scenery.Cone(p+Vector3.down*6,53,33,9,new Color(.13f,.17f,.23f));
             scenery.Box(p+Vector3.up*9,new Vector3(64,26,42),new Color(.105f,.14f,.19f));
             p+=Vector3.up*22;

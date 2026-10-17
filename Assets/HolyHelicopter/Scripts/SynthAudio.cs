@@ -2,11 +2,11 @@ using UnityEngine;
 
 namespace HolyHelicopter
 {
-    public enum SoundCue { Minigun, Water, Rocket, Explosion, UV, Shock, Pickup, Hurt, Select, Upgrade, Empty, Rescue, Crypt }
+    public enum SoundCue { Minigun, Water, Rocket, Explosion, UV, Shock, Pickup, Hurt, Select, Upgrade, Empty, Rescue, Crypt, Threat }
 
     public sealed class SynthAudio : MonoBehaviour
     {
-        readonly AudioClip[] clips = new AudioClip[13];
+        readonly AudioClip[] clips = new AudioClip[14];
         readonly AudioSource[] voices = new AudioSource[20];
         AudioSource rotor, ambience;
         int voice;
@@ -33,7 +33,7 @@ namespace HolyHelicopter
         {
             if (Muted) return;
             var source = voices[voice];
-            source.pitch = Random.Range(.94f, 1.07f);
+            source.pitch = cue == SoundCue.Threat ? 1f : Random.Range(.94f, 1.07f);
             source.clip = clips[(int)cue]; source.volume = volume * .6f; source.Play();
             voice = (voice + 1) % voices.Length;
         }
@@ -41,15 +41,20 @@ namespace HolyHelicopter
         void Update()
         {
             if (!rotor || !game.Flight) return;
-            rotor.volume = Muted ? 0 : (game.Started && !game.GameOver ? .12f : .055f);
-            rotor.pitch = .9f + game.Flight.Velocity.magnitude * .008f;
+            float response = 1f - Mathf.Exp(-Time.unscaledDeltaTime * 4f);
+            float load = game.Flight.EngineLoad;
+            float level = game.Started && !game.GameOver ? .095f + load * .055f : .055f;
+            rotor.volume = Muted ? 0 : Mathf.Lerp(rotor.volume, level, response);
+            // Thrust and collective load change the chop before airspeed catches up.
+            float pitch = .89f + load * .16f + game.Flight.PlanarSpeed * .0015f;
+            rotor.pitch = Mathf.Lerp(rotor.pitch, pitch, response);
             ambience.volume = Muted ? 0 : .105f;
         }
 
         static AudioClip MakeClip(SoundCue cue)
         {
             const int rate = 22050;
-            float duration = cue == SoundCue.Explosion || cue == SoundCue.Crypt || cue == SoundCue.Shock ? .9f : cue == SoundCue.Upgrade || cue == SoundCue.Rescue ? .6f : .15f;
+            float duration = cue == SoundCue.Threat ? .36f : cue == SoundCue.Explosion || cue == SoundCue.Crypt || cue == SoundCue.Shock ? .9f : cue == SoundCue.Upgrade || cue == SoundCue.Rescue ? .6f : .15f;
             int length = Mathf.CeilToInt(duration * rate);
             var data = new float[length];
             var rng = new System.Random(771 + (int)cue);
@@ -71,6 +76,12 @@ namespace HolyHelicopter
                     case SoundCue.UV: s = Mathf.Sin(t * 6.283f * 250) * .24f + Mathf.Sin(t * 6.283f * 505) * .12f; break;
                     case SoundCue.Hurt: s = noise * .4f + Mathf.Sin(t * 6.283f * 135) * .4f; break;
                     case SoundCue.Empty: s = noise * Mathf.Exp(-t * 80) * .8f; break;
+                    case SoundCue.Threat:
+                        float warningFrequency = t < .18f ? 620f : 930f;
+                        float pulseTime = t % .18f;
+                        env = Mathf.Clamp01(pulseTime / .012f) * Mathf.Clamp01((.15f - pulseTime) / .025f);
+                        s = Mathf.Sin(t * warningFrequency * 6.283185f) * .5f + Mathf.Sin(t * warningFrequency * 12.56637f) * .12f;
+                        break;
                     default:
                         float frequency = cue == SoundCue.Upgrade || cue == SoundCue.Rescue ? (u < .33f ? 523 : u < .66f ? 659 : 784) : 740 + u * 300;
                         s = Mathf.Sin(t * frequency * 6.283f) * .38f + Mathf.Sin(t * frequency * 12.566f) * .08f;

@@ -13,17 +13,27 @@ namespace HolyHelicopter
         [Serializable] sealed class PersonSample
         {
             public int index;
-            public bool alive, rescued;
+            public bool alive, rescued, sheltered;
+            public int village;
             public float health, distanceFromHome;
             public Vector3 position;
         }
 
+        [Serializable] sealed class SettlementSample
+        {
+            public string name,status;
+            public float integrity,clearProgress;
+            public int pressure,aliveResidents;
+            public bool overrun,secured;
+        }
+
         [Serializable] sealed class Snapshot
         {
-            public int requestedSecond, enemies, aliveCivilians, casualties, kills, activeCrypts, reinforcementsSpawned, frontierEnemiesSpawned, assaultsLaunched;
+            public int requestedSecond, enemies, aliveCivilians, shelteredCivilians, casualties, kills, activeCrypts, reinforcementsSpawned, frontierEnemiesSpawned, assaultsLaunched;
             public float elapsed, hull, fuel, meanCivilianHealth;
             public bool gameOver;
             public List<PersonSample> civilians = new List<PersonSample>();
+            public List<SettlementSample> settlements=new List<SettlementSample>();
         }
 
         [Serializable] sealed class Scenario
@@ -44,7 +54,7 @@ namespace HolyHelicopter
         {
             public string suite="Holy Helicopter accelerated balance and civilian playtest";
             public string utc, unityVersion, reportPath;
-            public string scope="Two deterministic 300-second simulations use the real Game.Step(0.05,false) with the helicopter serviced at base and no player firing. Base defenses remain active. Civilian losses are recorded, including late losses; only early survival is an assertion. This measures game outcomes and CPU simulation time, not render FPS.";
+            public string scope="Two deterministic 600-second simulations use real Game.Step(0.05,false), with the helicopter serviced at base and no player firing. Base defenses remain active. Population, shelter, civilian losses and village integrity are sampled each minute. Only early survival and reduced reinforcements are assertions. Isolated contact/rescue tests use real simulation; the settlement transition fixture starts at 0.2 integrity to avoid repeating the long siege. CPU simulation time is not render FPS.";
             public bool success, completed;
             public int passedChecks, failedChecks;
             public float minimumInitialCivilianSpacing, fleeDistance, contactHealthLost, panicAfterContact, rescueApproachSeconds;
@@ -133,10 +143,12 @@ namespace HolyHelicopter
                 ClearEnemies();
                 game.Elapsed=game.Balance.CivilianGraceSeconds+1;
             });
+            Check("Shelter delays exposure and a committed rescue approach releases residents",CheckShelter);
             Check("Civilian flees actual nearby ground threat",CheckFlee);
             Check("Contact damage gives brief adrenaline then recovery",CheckContactAndRecovery);
             Check("Fleeing civilian avoids house footprints",CheckBuildingAvoidance);
             Check("Civilian approaches safe helicopter and stops during winch",CheckApproachAndWinch);
+            Check("Ground occupation closes aid; clearing and holding restores it",CheckSettlement);
             yield return null;
             Finish();
         }
@@ -158,14 +170,14 @@ namespace HolyHelicopter
             {
                 game=new GameObject("Balance test fresh mission").AddComponent<Game>();
                 PrepareGame();
-                Require(game.Elapsed==0 && game.CivilianLosses==0 && game.Survivors.Count==8,"Fresh mission retained previous scenario state.");
+                Require(game.Elapsed==0 && game.CivilianLosses==0 && game.Survivors.Count==18,"Fresh mission retained previous scenario state.");
             });
             yield return null;
         }
 
         IEnumerator Simulate(Scenario scenario)
         {
-            const int ticksPerMinute=1200,totalTicks=6000,chunkSize=60;
+            const int ticksPerMinute=1200,totalTicks=12000,chunkSize=60;
             float deadline=Time.realtimeSinceStartup+240;
             scenario.snapshots.Add(Capture(0));
             bool failed=false;
@@ -216,10 +228,14 @@ namespace HolyHelicopter
             {
                 Survivor civilian=game.Survivors[i];
                 if(civilian.Alive)sample.aliveCivilians++;
+                if(civilian.Alive && civilian.Sheltered)sample.shelteredCivilians++;
                 sample.meanCivilianHealth+=Mathf.Max(0,civilian.Health)/game.Survivors.Count;
-                sample.civilians.Add(new PersonSample { index=i,alive=civilian.Alive,rescued=civilian.Rescued,health=civilian.Health,position=civilian.Position,
+                sample.civilians.Add(new PersonSample { index=i,alive=civilian.Alive,rescued=civilian.Rescued,sheltered=civilian.Sheltered,village=civilian.Village,health=civilian.Health,position=civilian.Position,
                     distanceFromHome=Game.HorizontalDistance(civilian.Position,civilian.Home) });
             }
+            foreach(Settlement site in game.Settlements.Sites)
+                sample.settlements.Add(new SettlementSample {name=site.Name,status=site.Status,integrity=site.Integrity,clearProgress=site.ClearProgress,
+                    pressure=site.Pressure,aliveResidents=site.AliveResidents,overrun=site.Overrun,secured=site.Secured});
             return sample;
         }
 
@@ -229,14 +245,19 @@ namespace HolyHelicopter
         {
             Snapshot first=FindSnapshot(scenario,60);
             Require(first!=null,"The first minute did not finish.");
-            Require(first.aliveCivilians>=6,"Too many civilians died before a new pilot could intervene: only "+first.aliveCivilians+" alive at 60 seconds.");
+            Require(first.aliveCivilians>=16,"Too many civilians died before a new pilot could intervene: only "+first.aliveCivilians+" alive at 60 seconds.");
+            Snapshot second=FindSnapshot(scenario,120);
+            Require(second!=null && second.aliveCivilians>=14,"Staged remote villages failed to preserve rescue opportunities through two minutes.");
             Require(first.enemies<1400,"First-minute population already reached "+first.enemies+"; escalation is too abrupt.");
         }
 
         void CheckInitialLayout()
         {
             Require(game.Horde.Count<=700,"Initial population is too high for gradual escalation: "+game.Horde.Count);
-            Require(game.Survivors.Count==8,"Expected eight civilian starts.");
+            Require(game.Survivors.Count==18 && World.VillageCount==3,"Expected eighteen civilians across three villages.");
+            int sheltered=0;
+            foreach(Survivor person in game.Survivors)if(person.Sheltered)sheltered++;
+            Require(sheltered==14,"Expected four exposed near villagers and fourteen initially sheltered residents.");
             foreach(Crypt crypt in game.Crypts)Require(Game.HorizontalDistance(crypt.Position,World.BasePosition)>275,"Crypt is within home-base weapon reach: "+crypt.Name);
             float minimum=float.PositiveInfinity;
             for(int i=0;i<game.Survivors.Count;i++)
@@ -284,7 +305,7 @@ namespace HolyHelicopter
             ClearEnemies();
             Survivor person=game.Survivors[0];
             Vector3 village=World.VillagePosition(0);
-            Vector3 house=World.Ground(village.x+Mathf.Sin(.2f)*42,village.z+Mathf.Cos(.2f)*42);
+            Vector3 house=World.Ground(village.x+Mathf.Sin(.2f)*55,village.z+Mathf.Cos(.2f)*55);
             Require(!World.CivilianWalkable(house,.8f),"Expected first house footprint is missing.");
             Vector3 start=World.Ground(house.x,house.z-13);
             Require(World.CivilianWalkable(start,1),"Building avoidance starting point is obstructed.");
@@ -325,10 +346,54 @@ namespace HolyHelicopter
 
         void Step(){game.Paused=false;game.Step(StepSize,false);}
 
+        void CheckShelter()
+        {
+            ClearEnemies();
+            Survivor person=game.Survivors[12];
+            ResetPerson(person,World.VillagePosition(2)+Vector3.right*30);
+            person.Sheltered=true;person.ShelterUntil=game.Elapsed+100;
+            game.Flight.Teleport(World.BasePosition+Vector3.up*6);
+            SpawnSkeleton(person.Position+Vector3.forward*.5f);
+            Vector3 start=person.Position;
+            for(int n=0;n<20;n++)Step();
+            Require(person.Sheltered && person.Health==100 && Game.HorizontalDistance(start,person.Position)<.01f,"Ward failed to shelter a remote resident before activation.");
+            game.Flight.Teleport(World.VillagePosition(2)+Vector3.up*10);
+            Step();
+            Require(!person.Sheltered,"Committed low approach did not release the resident for rescue.");
+            ClearEnemies();
+            game.Flight.Teleport(World.BasePosition+Vector3.up*6);
+        }
+
+        void CheckSettlement()
+        {
+            ClearEnemies();
+            Settlement site=game.Settlements.Sites[2];
+            site.Integrity=.2f;site.Overrun=false;
+            game.Flight.Teleport(World.BasePosition+Vector3.up*6);
+            for(int n=0;n<220;n++)
+            {
+                float a=n*2.39996f,r=4+(n%12);
+                SpawnSkeleton(site.Position+new Vector3(Mathf.Cos(a)*r,0,Mathf.Sin(a)*r));
+            }
+            for(int n=0;n<80;n++)Step();
+            Require(site.Pressure>=18 && site.Overrun && !game.Settlements.CanUseFieldAid(2),"Sustained real ground occupation did not overrun weakened village or close its field aid.");
+            ClearEnemies();
+            // Hover on the opposite side of the aid circle so its new physical repair crate is not auto-hooked.
+            game.Flight.Teleport(site.AidPosition+Vector3.left*15+Vector3.up*8);game.Hull=43;
+            int salvage=game.Salvage,supplies=game.Supplies.Count;
+            for(int n=0;n<20;n++)Step();
+            Require(site.Overrun && game.Hull<=43.01f,"Overrun field aid incorrectly repaired the helicopter.");
+            for(int n=0;n<540;n++)Step();
+            Require(!site.Overrun && site.Secured && game.Settlements.CanUseFieldAid(2),"Clearing and holding the village did not reclaim its field aid.");
+            Require(game.Salvage>=salvage+35 && game.Supplies.Count>supplies,"First liberation did not grant salvage and a repair cache.");
+            Require(game.Hull>43 && game.Hull<=70.01f,"Restored field aid failed its slow repair or 70 hull cap.");
+        }
+
         void ResetPerson(Survivor person,Vector3 position)
         {
             person.Position=person.Home=position;person.Velocity=Vector3.zero;
             person.Health=person.LastHealth=100;person.Rescued=false;person.PanicSeconds=person.HitCooldown=person.ThinkTimer=0;
+            person.Sheltered=false;person.ShelterUntil=0;
             person.ThreatCount=0;person.NearestThreat=float.PositiveInfinity;
             if(person.Visual){person.Visual.gameObject.SetActive(true);person.Visual.position=position;}
         }

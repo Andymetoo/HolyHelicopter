@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47caa10534774b699821f11c3b97a821, type: 3}
   m_Name: MidnightBalance
   m_EditorClassIdentifier: 
-  InitialEnemies: 380
+  InitialEnemies: 650
   EscalationSeconds: 240
   CryptSpawnStart: 1.2
   CryptSpawnPeak: 4.5

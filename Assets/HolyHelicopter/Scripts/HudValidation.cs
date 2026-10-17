@@ -33,6 +33,7 @@ namespace HolyHelicopter
         Report report;
         string directory;
         bool showPause;
+        readonly Horde.ThreatRadarPoint[] threatPreview = new Horde.ThreatRadarPoint[48];
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void LaunchIfRequested()
@@ -116,6 +117,23 @@ namespace HolyHelicopter
                 yield return SaveCapture("armory", width, height);
             }
 
+            PrepareFlight();
+            game.Hud.ShowChart = true;
+            yield return SaveCapture("chart", 1024, 576);
+            yield return SaveCapture("chart", 1600, 900);
+            game.Hud.ShowChart = false;
+
+            PrepareAirThreat();
+            float priorTimeScale = Time.timeScale;
+            Time.timeScale = 0; // Preserve the real charge/flight trail while the screenshot is presented.
+            yield return SaveCapture("air-threat", 1600, 900);
+            Time.timeScale = priorTimeScale;
+
+            PrepareWideView();
+            game.Hud.enabled = false;
+            yield return SaveCapture("countryside-wide", 1600, 900);
+            game.Hud.enabled = true;
+
             PrepareArmory();
             game.Started = false;
             yield return SaveCapture("title", 1024, 576);
@@ -139,6 +157,7 @@ namespace HolyHelicopter
         {
             game.Started = true;
             game.Paused = game.GameOver = game.Won = false;
+            game.Hud.ShowChart = false;
             game.SetCursor(true);
             Survivor survivor = null;
             foreach (Survivor candidate in game.Survivors)
@@ -155,6 +174,7 @@ namespace HolyHelicopter
         {
             game.Started = true;
             game.Paused = game.GameOver = game.Won = false;
+            game.Hud.ShowChart = false;
             game.SetCursor(true);
             Vector3 position = World.BasePosition + Vector3.up * 7;
             Frame(position, position + new Vector3(0, -5, 35));
@@ -165,13 +185,52 @@ namespace HolyHelicopter
 
         void Frame(Vector3 position, Vector3 target)
         {
-            game.Flight.Teleport(position);
             Vector3 direction = target - position;
-            game.Flight.transform.rotation = Quaternion.Euler(0, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg, 0);
-            game.Flight.Camera.transform.rotation = Quaternion.LookRotation(direction);
-            Shader.SetGlobalVector("_HolyLampPosition", new Vector4(position.x, position.y, position.z, 1));
-            Shader.SetGlobalVector("_HolyLampDirection", direction.normalized);
+            float heading = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
+            float pitch = Mathf.Atan2(-direction.y, new Vector2(direction.x, direction.z).magnitude) * Mathf.Rad2Deg;
+            game.Flight.Teleport(position, heading, pitch);
             game.Arsenal.Tick(0, false);
+        }
+
+        void PrepareAirThreat()
+        {
+            game.Hud.ShowChart = false;
+            game.Started = true;
+            game.Paused = game.GameOver = game.Won = false;
+            game.SetCursor(true);
+            game.RescueTarget = "";
+            game.RescueProgress = 0;
+            game.Combo = 0;
+            game.Hull = 100;
+            Vector3 crypt = game.Crypts[0].Position;
+            Vector3 position = World.Ground(crypt.x + 16, crypt.z - 78) + Vector3.up * 31;
+            Frame(position, crypt + Vector3.up * 21);
+            // Use the actual territorial defenders and their real telegraphed attack state.
+            for (int frame = 0; frame < 300; frame++)
+            {
+                game.Elapsed += 1f / 60;
+                game.Horde.Tick(1f / 60);
+                if (game.Horde.ChargingGargoyles > 0 || game.Horde.DivingGargoyles > 0) break;
+            }
+            int count = game.Horde.GetThreatRadarPoints(position, 230, threatPreview);
+            for (int i = 0; i < count; i++)
+                if (threatPreview[i].Heavy)
+                {
+                    Frame(position, Vector3.Lerp(threatPreview[i].Position, crypt + Vector3.up * 15, .25f));
+                    break;
+                }
+            game.Message("STONE WINGS / Read the amber attack line. Turn or change altitude, then counterattack.");
+        }
+
+        void PrepareWideView()
+        {
+            game.Hud.ShowChart = false;
+            game.Started = true;
+            game.Paused = game.GameOver = game.Won = false;
+            game.RescueTarget = "";
+            game.MessageUntil = 0;
+            Vector3 position = World.Ground(170, -10) + Vector3.up * 56;
+            Frame(position, World.Ground(-300, 300) + Vector3.up * 14);
         }
 
         IEnumerator SaveCapture(string view, int width, int height)
@@ -227,7 +286,7 @@ namespace HolyHelicopter
 
         void Finish()
         {
-            report.success = report.errors.Count == 0 && report.captures.Count >= 9;
+            report.success = report.errors.Count == 0 && report.captures.Count >= 15;
             foreach (Capture capture in report.captures) if (!capture.passed) report.success = false;
             Application.logMessageReceived -= CaptureError;
             try { File.WriteAllText(Path.Combine(directory, "HolyHelicopter-ui-report.json"), JsonUtility.ToJson(report, true)); }

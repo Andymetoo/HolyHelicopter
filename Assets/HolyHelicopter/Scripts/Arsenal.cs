@@ -33,8 +33,7 @@ namespace HolyHelicopter
 
         public void Tick(float dt, bool canFire)
         {
-            var camera = game.Flight.Camera;
-            AimPoint = TraceAim(camera.transform.position, camera.transform.forward, 420f);
+            AimPoint = TraceAim(game.Flight.AimOrigin, game.Flight.AimForward, 420f);
             FriendlyFireRisk = CiviliansInBlast(LeftSlot) || CiviliansInBlast(RightSlot);
             for (int i = 0; i < Weapons.Length; i++) Weapons[i].Cooldown -= dt;
             if (canFire && Mouse.current != null)
@@ -62,8 +61,9 @@ namespace HolyHelicopter
             }
         }
 
-        void TryFire(int index)
+        public void TryFire(int index)
         {
+            if (index < 0 || index >= Weapons.Length) return;
             WeaponState w = Weapons[index];
             if (!w.Unlocked || w.Cooldown > 0) return;
             if (w.Ammo < 1f)
@@ -73,16 +73,17 @@ namespace HolyHelicopter
             }
             w.Ammo--;
             float power = 1f + .42f * (w.Level - 1);
-            var view = game.Flight.Camera.transform;
-            Vector3 muzzle = view.position + view.right * (index == RightSlot ? 1.1f : -1.1f) - view.up * .75f + view.forward * 1.8f;
-            Vector3 aim = TraceAim(view.position, view.forward, w.Range);
-            float distance = Vector3.Distance(view.position, aim);
+            var flight = game.Flight;
+            Vector3 origin = flight.AimOrigin, forward = flight.AimForward, up = flight.AimUp;
+            Vector3 muzzle = origin + flight.AimRight * (index == RightSlot ? 1.1f : -1.1f) - up * .75f + forward * 1.8f;
+            Vector3 aim = TraceAim(origin, forward, w.Range);
+            float distance = Vector3.Distance(origin, aim);
             switch (w.Kind)
             {
                 case DamageKind.Silver:
                     w.Cooldown = Mathf.Max(.027f, .052f - (w.Level - 1) * .004f);
-                    Vector3 direction = (view.forward + Random.insideUnitSphere * .0035f).normalized;
-                    if (game.Horde.DamageRay(view.position, direction, distance + 1f, .85f + w.Level * .12f, 43f * power, w.Kind, out var impact))
+                    Vector3 direction = (forward + Random.insideUnitSphere * .0035f).normalized;
+                    if (game.Horde.DamageRay(origin, direction, distance + 2f, .85f + w.Level * .12f, 43f * power, w.Kind, out var impact))
                     { aim = impact; game.ConfirmHit(); }
                     else game.DamageWorld(aim, 1.5f, 32f * power, w.Kind);
                     game.Effects.Beam(muzzle, aim, w.Color, .055f + w.Level * .014f, .055f);
@@ -96,7 +97,7 @@ namespace HolyHelicopter
                     for (int i = 1; i <= 4; i++)
                     {
                         float t = i / 4f;
-                        Vector3 p = Vector3.Lerp(muzzle, aim, t) + view.up * Mathf.Sin(t * Mathf.PI) * 1.7f;
+                        Vector3 p = Vector3.Lerp(muzzle, aim, t) + up * Mathf.Sin(t * Mathf.PI) * 1.7f;
                         game.Effects.Beam(previous, p, w.Color, .11f + t * .27f, .12f);
                         previous = p;
                     }
@@ -115,7 +116,7 @@ namespace HolyHelicopter
                     break;
                 case DamageKind.UV:
                     w.Cooldown = .09f;
-                    if (game.Horde.DamageRay(view.position, view.forward, distance + 1, 2.8f + w.Level * .4f, 34 * power, w.Kind, out var uvHit)) aim = uvHit;
+                    if (game.Horde.DamageRay(origin, forward, distance + 3, 2.8f + w.Level * .4f, 34 * power, w.Kind, out var uvHit)) aim = uvHit;
                     game.DamageArea(aim, 4.2f + w.Level, 20f * power, w.Kind);
                     game.Effects.Beam(muzzle, aim, w.Color, .7f, .11f);
                     game.Effects.Burst(aim, w.Color, 5, 1.2f);
@@ -123,13 +124,13 @@ namespace HolyHelicopter
                     break;
                 case DamageKind.Shock:
                     w.Cooldown = 3.4f;
-                    Vector3 center = World.Ground(view.position.x, view.position.z);
+                    Vector3 center = World.Ground(origin.x, origin.z);
                     game.DamageArea(center, 29f + w.Level * 4f, 250f * power, w.Kind);
                     game.Horde.ClearBoarders();
                     game.Effects.Ring(center, 12f, w.Color, .6f);
                     game.Effects.Ring(center, 23f, w.Color, .6f);
                     game.Effects.Ring(center, 29f + w.Level * 4f, w.Color, .6f);
-                    game.Effects.Beam(view.position, center, w.Color, 2f, .45f);
+                    game.Effects.Beam(origin, center, w.Color, 2f, .45f);
                     game.Effects.Burst(center, w.Color, 130, 3f);
                     game.Audio.Play(SoundCue.Shock, .85f);
                     game.Message("THE RAPTURE — please keep your skeletons inside the blast radius.");
@@ -137,7 +138,7 @@ namespace HolyHelicopter
             }
         }
 
-        public Vector3 TraceAim(Vector3 origin, Vector3 direction, float range)
+        public Vector3 TraceAim(Vector3 origin, Vector3 direction, float range, bool includeEnemies = true)
         {
             float best = range;
             // Analytic terrain query: no mesh collider, allocation, or rigidbody for the countryside.
@@ -171,6 +172,7 @@ namespace HolyHelicopter
                     if (t > 0 && t < best) best = t;
                 }
             }
+            if (includeEnemies && game.Horde && game.Horde.RaycastThreat(origin, direction, best, 1.4f, out var threatHit)) return threatHit;
             return origin + direction * best;
         }
 
@@ -187,8 +189,8 @@ namespace HolyHelicopter
         {
             var w = Weapons[slot];
             if (!w.Unlocked || w.Kind != DamageKind.Rocket && w.Kind != DamageKind.Shock) return false;
-            var view = game.Flight.Camera.transform;
-            Vector3 point = w.Kind == DamageKind.Shock ? World.Ground(view.position.x, view.position.z) : TraceAim(view.position, view.forward, w.Range);
+            Vector3 origin = game.Flight.AimOrigin;
+            Vector3 point = w.Kind == DamageKind.Shock ? World.Ground(origin.x, origin.z) : TraceAim(origin, game.Flight.AimForward, w.Range);
             float radius = w.Kind == DamageKind.Shock ? 29 + w.Level * 4 : 17 + w.Level * 2;
             foreach (var s in game.Survivors)
                 if (s.Alive && Vector3.Distance(point, s.Position + Vector3.up) < radius + 2) return true;

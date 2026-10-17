@@ -3,7 +3,7 @@ using UnityEngine;
 namespace HolyHelicopter
 {
     /// <summary>A deliberately broad canopy, with instruments drawn in a fixed design space.</summary>
-    public sealed class Hud : MonoBehaviour
+    public sealed partial class Hud : MonoBehaviour
     {
         const float Width = 1600f, Height = 900f, RadarRange = 200f;
         static readonly Color Ink = new Color(.025f, .043f, .055f, .96f);
@@ -18,7 +18,7 @@ namespace HolyHelicopter
         static readonly Color Green = new Color(.44f, .92f, .61f);
         static readonly Color Friendly = new Color(.20f, .96f, .92f);
         static readonly string[] CompassNames = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
-        static readonly string[] SupplyLabels = { "AMMO", "FUEL", "REPAIR", "SALVAGE" };
+        static readonly string[] SupplyLabels = { "AMMO", "FUEL", "REPAIR", "SALVAGE", "GOLDEN SEAL" };
         readonly Vector3[] radarPoints = new Vector3[640];
         readonly Texture2D[] weaponIcons = new Texture2D[5];
         readonly Color32[] radarPixels = new Color32[192 * 192];
@@ -79,6 +79,7 @@ namespace HolyHelicopter
         {
             if (disc != null) Destroy(disc);
             if (radarTexture != null) Destroy(radarTexture);
+            if (chartTerrain != null) Destroy(chartTerrain);
             foreach (Texture2D icon in weaponIcons) if (icon != null) Destroy(icon);
         }
 
@@ -104,7 +105,8 @@ namespace HolyHelicopter
                 DrawWeapons();
                 DrawStatus();
                 DrawNotifications();
-                if (game.AtBase && game.CursorFree && !game.ShowHelp && !game.Paused && !game.GameOver) DrawArmory();
+                if (ShowChart && !game.Paused && !game.GameOver) DrawChart();
+                if (game.AtBase && game.CursorFree && !ShowChart && !game.ShowHelp && !game.Paused && !game.GameOver) DrawArmory();
                 if (game.ShowHelp && !game.Paused && !game.GameOver) DrawHelp();
                 if (game.Paused && !game.GameOver) DrawPause();
                 if (game.GameOver) DrawEnd();
@@ -153,7 +155,7 @@ namespace HolyHelicopter
             Box(new Rect(24, 24, 390, 157), new Color(.025f, .043f, .055f, .88f), Edge);
             Fill(new Rect(24, 24, 4, 157), Gold);
             Text(new Rect(43, 35, 350, 27), "OPERATION / MIDNIGHT MASS", 17, Gold);
-            Text(new Rect(43, 68, 350, 30), $"CRYPTS  {game.ActiveCrypts} REMAIN", 24, Ivory);
+            Text(new Rect(43, 68, 350, 30), $"CRYPTS {game.ActiveCrypts}  /  SEALS {game.RelicsDelivered + game.RelicsAboard}/4", 23, Ivory);
             Text(new Rect(43, 105, 350, 27), $"DELIVERED  {game.Rescued} / {game.ExtractionQuota}", 21, game.Rescued >= game.ExtractionQuota ? Green : Ivory);
             Text(new Rect(43, 144, 350, 27), $"ABOARD {game.Passengers}/4    LOSSES {game.CivilianLosses}", 17, game.CivilianLosses > 0 ? Gold : Muted);
             if (game.CanExtract)
@@ -183,6 +185,7 @@ namespace HolyHelicopter
             float deltaBase = Mathf.DeltaAngle(heading, Mathf.Atan2(toBase.x, toBase.z) * Mathf.Rad2Deg);
             string arrow = Mathf.Abs(deltaBase) < 14 ? "•" : deltaBase < 0 ? "<" : ">";
             Text(new Rect(620, 93, 360, 20), $"{arrow}  SANCTUARY  {new Vector2(toBase.x, toBase.z).magnitude:0} m  {arrow}", 12, Gold, TextAnchor.MiddleCenter);
+            DrawNavigation(heading);
         }
 
         void DrawCombat()
@@ -197,6 +200,9 @@ namespace HolyHelicopter
             Text(new Rect(1228, 190, 330, 25), $"NEXT ARMY  {ClockText(game.Horde.NextAssaultIn)}", 16, Muted, TextAnchor.MiddleRight);
             bool hit = Time.time < game.HitUntil;
             Color reticle = game.Arsenal.FriendlyFireRisk ? Hazard : hit ? Gold : new Color(.82f, .95f, .85f, .87f);
+            Vector3 aimScreen = game.Flight.Camera.WorldToViewportPoint(game.Arsenal.AimPoint);
+            Matrix4x4 reticleMatrix = GUI.matrix;
+            GUI.matrix = GUI.matrix * Matrix4x4.Translate(new Vector3((aimScreen.x - .5f) * Width, (.5f - aimScreen.y) * Height, 0));
             Fill(new Rect(785, 449, 8, 2), reticle); Fill(new Rect(807, 449, 8, 2), reticle);
             Fill(new Rect(799, 435, 2, 8), reticle); Fill(new Rect(799, 457, 2, 8), reticle);
             Fill(new Rect(799, 449, 2, 2), reticle);
@@ -207,6 +213,8 @@ namespace HolyHelicopter
                 Line(new Vector2(780, 470), new Vector2(787, 463), 2, Gold);
                 Line(new Vector2(820, 470), new Vector2(813, 463), 2, Gold);
             }
+            GUI.matrix = reticleMatrix;
+            DrawAirThreats();
             if (game.Combo >= 4)
             {
                 Text(new Rect(650, 494, 300, 38), $"{game.Combo:N0}  SOUL STREAK", 23, Gold, TextAnchor.MiddleCenter);
@@ -214,6 +222,8 @@ namespace HolyHelicopter
             }
             if (game.Horde.Boarders > 0)
                 Alert($"{game.Horde.Boarders} BOARDERS  //  STRAFE HARD & CLIMB", Red, 595);
+            else if (game.Horde.DivingGargoyles > 0 || game.Horde.ChargingGargoyles > 0)
+                Alert(game.Horde.DivingGargoyles > 0 ? "TALON PASS / BREAK TURN OR CHANGE ALTITUDE" : "STONE WINGS / ATTACK WINDUP", Hazard, 595);
             else if (game.Horde.ActiveHexes > 0 || game.Horde.ChargingHexes > 0)
                 Alert(game.Horde.ActiveHexes > 0 ? "HEX INBOUND / STRAFE OR CLIMB" : "HEX CHARGING / KEEP MOVING", Red, 595);
             else if (game.Horde.TowerCount > 0 && Vector3.Distance(game.Flight.transform.position, game.Horde.TowerPosition) < 65)
@@ -268,12 +278,14 @@ namespace HolyHelicopter
                 Vector2 p = RadarPosition(radarPoints[i], origin, sine, cosine, radius, centre);
                 if ((p - centre).sqrMagnitude <= radius * radius) RadarPixel(p, Red, 1);
             }
+            for(int i=0;i<threatCount;i++)
+                if(threats[i].Heavy) RadarMark(threats[i].Position,origin,sine,cosine,centre,radius,Hazard,5,false);
             foreach (Crypt crypt in game.Crypts)
                 if (crypt.Active) RadarMark(crypt.Position, origin, sine, cosine, centre, radius, new Color(.88f, .43f, 1f), 6, true);
             foreach (Survivor survivor in game.Survivors)
                 if (survivor.Alive) RadarMark(survivor.Position, origin, sine, cosine, centre, radius, Friendly, 5, false, MarkerKind.Person);
             foreach (Supply supply in game.Supplies)
-                if (!supply.Collected) RadarMark(supply.Position, origin, sine, cosine, centre, radius, Cyan, 4, false, MarkerKind.Crate);
+                if (!supply.Collected) RadarMark(supply.Position, origin, sine, cosine, centre, radius, supply.Kind == SupplyKind.Relic ? Gold : Cyan, 4, false, MarkerKind.Crate);
             RadarMark(World.BasePosition, origin, sine, cosine, centre, radius, Gold, 7, true);
             radarTexture.SetPixels32(radarPixels);
             radarTexture.Apply(false);
@@ -427,9 +439,12 @@ namespace HolyHelicopter
         {
             if (game.Flight.Camera == null) return;
             Vector3 player = game.Flight.transform.position;
+            foreach (var site in game.Settlements.Sites)
+                if (Vector3.Distance(player,site.Position)<320)
+                    WorldMark(site.AidPosition+Vector3.up*12, Vector3.Distance(player,site.Position)<65 ? (site.Secured ? "FIELD REPAIR / 70% HULL" : "FIELD AID CLOSED") : site.Name, site.UnderAttack||site.Overrun?Hazard:Green,site.Integrity/100,true);
             foreach (Crypt crypt in game.Crypts)
             {
-                if (!crypt.Active || Vector3.Distance(player, crypt.Position) > 600) continue;
+                if (!crypt.Active || Vector3.Distance(player, crypt.Position) > 500) continue;
                 WorldMark(crypt.Position + Vector3.up * 12, crypt.Name.ToUpperInvariant(), new Color(.94f, .49f, .97f), crypt.Health / crypt.MaxHealth, true);
             }
             foreach (Survivor survivor in game.Survivors)
@@ -452,7 +467,7 @@ namespace HolyHelicopter
             }
             foreach (Supply supply in game.Supplies)
                 if (!supply.Collected && Vector3.Distance(player, supply.Position) < 100)
-                    WorldMark(supply.Position + Vector3.up * 3, SupplyLabels[(int)supply.Kind], Cyan, -1, false, MarkerKind.Crate, supply == captionedSupply);
+                    WorldMark(supply.Position + Vector3.up * 3, SupplyLabels[(int)supply.Kind], supply.Kind == SupplyKind.Relic ? Gold : Cyan, -1, false, MarkerKind.Crate, supply == captionedSupply || supply.Kind == SupplyKind.Relic);
             if (Vector3.Distance(player, World.BasePosition) > 28)
                 WorldMark(World.BasePosition + Vector3.up * 10, "SANCTUARY", Gold, -1, true);
         }
@@ -534,7 +549,7 @@ namespace HolyHelicopter
             HelpRow(309, "WEAPONS", "Hold LMB / RMB. TAB frees the cursor. Left / right click icons to assign.");
             HelpRow(379, "HOOK", "Below 46 ft: fly over crates. Slow near cyan people to rescue. Four seats.");
             HelpRow(449, "DANGER", "Strafe or climb to dodge hexes and shake boarders. Keep moving over swarms.");
-            HelpRow(519, "MISSION", "Seal four crypts. Bring four people home if possible. Losses lower your grade.");
+            HelpRow(519, "MISSION", "Recover four crypt seals. Deliver eight people. G opens the navigation chart.");
             HelpRow(589, "SANCTUARY", "Hover over the pad to deliver, repair, refuel and rearm. TAB opens upgrades.");
             Text(new Rect(351, 679, 896, 28), "H CLOSES / ESC PAUSES / F3 TELEMETRY / M MUTES", 18, Muted, TextAnchor.MiddleCenter);
         }
@@ -559,8 +574,8 @@ namespace HolyHelicopter
             Text(new Rect(112, 724, 700, 60), "YOU ARE MERCY-ONE. YOUR ROTORS ARE A CROSS.\nYOUR FLIGHT PLAN IS A TERRIBLE IDEA.", 18, Muted, TextAnchor.UpperLeft, true);
             Box(new Rect(981, 158, 508, 619), new Color(.025f, .043f, .055f, .92f), Edge);
             Text(new Rect(1014, 187, 442, 27), "TONIGHT'S SERMON", 22, Gold);
-            Brief(235, "01", "SHUT THE GATES", "Seal four crypts to stop their reinforcements.");
-            Brief(338, "02", "BRING THEM HOME", "Aim to save four survivors. Every loss costs you.");
+            Brief(235, "01", "SHUT THE GATES", "Breach four crypts. Hook their golden seals. Expect retaliation.");
+            Brief(338, "02", "BRING THEM HOME", "Deliver eight survivors and all seals. G opens your chart.");
             Brief(441, "03", "COME BACK LOUDER", "Rearm at Sanctuary. Buy outrageous holy weapons.");
             Fill(new Rect(1014, 546, 442, 1), Edge);
             Text(new Rect(1014, 565, 442, 29), "WASD MOVE / MOUSE AIM / LMB-RMB FIRE", 18, Ivory);
@@ -590,8 +605,10 @@ namespace HolyHelicopter
                 game.Flight.InvertY = !game.Flight.InvertY;
             if (Button(new Rect(808, 405, 210, 43), "AUDIO  /  " + (game.Audio.Muted ? "MUTED" : "ON"), game.Audio.Muted ? Muted : Gold, 12))
                 game.Audio.Muted = !game.Audio.Muted;
-            if (Button(new Rect(582, 490, 436, 56), "RESUME THE SERMON", Gold, 19)) game.TogglePause();
-            if (Button(new Rect(582, 566, 436, 44), "RESTART OPERATION", Muted, 14)) game.Restart();
+            Text(new Rect(582, 464, 436, 25), "COCKPIT MOTION  /  " + Mathf.RoundToInt(game.Flight.CameraMotion * 100) + "%", 17, Ivory);
+            game.Flight.CameraMotion = Slider(new Rect(582, 494, 436, 24), game.Flight.CameraMotion, 0, 1);
+            if (Button(new Rect(582, 535, 436, 50), "RESUME THE SERMON", Gold, 19)) game.TogglePause();
+            if (Button(new Rect(582, 601, 436, 40), "RESTART OPERATION", Muted, 14)) game.Restart();
             Text(new Rect(554, 662, 492, 48), "ESC RESUMES / H OPENS MANUAL\nM MUTES AUDIO", 17, Muted, TextAnchor.MiddleCenter, true);
         }
 

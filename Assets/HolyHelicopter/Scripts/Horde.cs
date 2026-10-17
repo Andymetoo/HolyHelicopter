@@ -11,22 +11,35 @@ namespace HolyHelicopter
     {
         struct Enemy
         {
-            public Vector3 Position, AttackTarget;
+            public Vector3 Position, AttackTarget, Home;
             public float Health, Phase, Ground, Speed, AttackTime, AttackPhase, Flash;
             public EnemyKind Kind;
-            public byte Army, AttackState;
-            public int Id;
+            public byte Army, AttackState, Role;
+            public int Id, CryptIndex;
         }
 
         struct HexProjectile
         {
             public Vector3 Position, Target, Velocity;
-            public float Charge, Life;
+            public float Charge, Life, Speed, Damage;
             public bool Active;
             public int SourceId;
+            public byte Pattern;
+            public float Spread;
+        }
+
+        // Roles: 0 marching army, 1 crypt sentinel, 2 territorial winged defender, 3 pursuer.
+        public struct ThreatRadarPoint
+        {
+            public Vector3 Position;
+            public EnemyKind Kind;
+            public bool Heavy;
+            public byte Role;
+            public int Id;
         }
 
         public int Capacity = 6000;
+        public float GargoyleCruise = 28f, GargoyleDive = 38f, GargoyleDamage = 14f, NecromancerDamage = 8f;
         public int Count => _count + TowerCount;
         public int Boarders { get; private set; }
         public int TowerCount { get; private set; }
@@ -37,6 +50,9 @@ namespace HolyHelicopter
         public int ActiveHexes { get; private set; }
         public int ChargingHexes { get; private set; }
         public int DivingBats { get; private set; }
+        public int EngagedGargoyles { get; private set; }
+        public int DivingGargoyles { get; private set; }
+        public int ChargingGargoyles { get; private set; }
         public Vector3 NearestHexPosition { get; private set; }
         public float NearestHexDistance { get; private set; } = float.PositiveInfinity;
         public int ReinforcementsSpawned { get; private set; }
@@ -50,12 +66,12 @@ namespace HolyHelicopter
         Enemy[] _enemies;
         int _count, _frame, _nextEnemyId;
         float _targetClock, _towerClock, _stillTime, _towerIntegrity, _nextAssaultTime;
-        float _boardClock, _shakeClock, _hexCastClock, _hexHitClock, _batHitClock, _hexVisualClock, _towerFlash;
-        float _towerMessageTime = -30f, _boardMessageTime = -30f;
+        float _boardClock, _shakeClock, _hexCastClock, _hexHitClock, _batHitClock, _heavyHitClock, _hexVisualClock, _towerFlash;
+        float _towerMessageTime = -30f, _boardMessageTime = -30f, _nextWingWarning;
         float[] _cryptSpawnBudgets;
-        readonly Vector3[] _armyTargets = new Vector3[2];
-        readonly Vector3[] _civilianTargets = new Vector3[32];
-        readonly int[] _civilianTargetCounts = new int[2];
+        Vector3[] _armyTargets;
+        Vector3[] _civilianTargets;
+        int[] _civilianTargetCounts;
         readonly HexProjectile[] _hexes = new HexProjectile[40];
         struct BillboardVertex
         {
@@ -75,8 +91,10 @@ namespace HolyHelicopter
             Capacity = Mathf.Clamp(Capacity, 1024, 6000);
             _enemies = new Enemy[Capacity];
             _cryptSpawnBudgets = new float[Mathf.Max(1, game.Crypts.Count)];
-            _armyTargets[0] = World.VillagePosition(0);
-            _armyTargets[1] = World.VillagePosition(1);
+            _armyTargets = new Vector3[World.VillageCount];
+            _civilianTargets = new Vector3[World.VillageCount * 16];
+            _civilianTargetCounts = new int[World.VillageCount];
+            for (int i = 0; i < _armyTargets.Length; i++) _armyTargets[i] = World.VillagePosition(i);
             _nextAssaultTime = Mathf.Max(15f, game.Balance.AssaultStart);
             Shader shader = Resources.Load<Shader>("HordeBillboard");
             if (shader == null) shader = Shader.Find("HolyHelicopter/HordeBillboard");
@@ -97,10 +115,10 @@ namespace HolyHelicopter
             _shadows = MakeDynamicMesh("One mesh / ground contact shadows", _shadowMaterial, out _shadowRenderer);
 
             // A readable opening encounter leaves room for the first sortie to escalate.
-            int initial = Mathf.Clamp(game.Balance.InitialEnemies, 0, Capacity);
+            int initial = Mathf.Clamp(game.Balance.InitialEnemies - game.Crypts.Count * 4, 0, Capacity);
             int opening = game.Crypts.Count > 0 ? Mathf.RoundToInt(initial * .24f) : initial;
             Vector3 openingCenter = game.Crypts.Count > 0
-                ? Vector3.Lerp(World.BasePosition, game.Crypts[0].Position, .72f)
+                ? Vector3.MoveTowards(World.BasePosition, game.Crypts[0].Position, 145f)
                 : World.BasePosition + Vector3.forward * 95f;
             SpawnHorde(World.Ground(openingCenter.x, openingCenter.z), opening);
             int remaining = initial - opening;
@@ -113,6 +131,7 @@ namespace HolyHelicopter
                 int population = remaining / (game.Crypts.Count - i);
                 SpawnHorde(approach, population);
                 remaining -= population;
+                SpawnGarrison(i);
             }
             RefreshArmyTargets();
         }
@@ -126,6 +145,7 @@ namespace HolyHelicopter
             _hexCastClock = Mathf.Max(0f, _hexCastClock - dt);
             _hexHitClock = Mathf.Max(0f, _hexHitClock - dt);
             _batHitClock = Mathf.Max(0f, _batHitClock - dt);
+            _heavyHitClock = Mathf.Max(0f, _heavyHitClock - dt);
             _towerFlash = Mathf.Max(0f, _towerFlash - dt * 4f);
             _targetClock -= dt;
             if (_targetClock <= 0f)
@@ -135,6 +155,7 @@ namespace HolyHelicopter
             }
             TickSpawning(dt);
             DivingBats = 0;
+            EngagedGargoyles = DivingGargoyles = ChargingGargoyles = 0;
 
             for (int i = 0; i < _count; i++)
             {
@@ -143,11 +164,15 @@ namespace HolyHelicopter
                 float horizontalSq = delta.x * delta.x + delta.z * delta.z;
                 enemy.Flash = Mathf.Max(0f, enemy.Flash - dt * 5f);
                 enemy.AttackTime = Mathf.Max(0f, enemy.AttackTime - dt);
-                bool flying = enemy.Kind == EnemyKind.Bat;
+                bool flying = IsFlying(enemy.Kind);
                 Vector3 beforeMove = enemy.Position;
                 Vector3 destination;
                 float moveSpeed = enemy.Speed;
-                if (flying)
+                if (enemy.Kind == EnemyKind.Gargoyle)
+                {
+                    TickGargoyle(ref enemy, player, dt, out destination, out moveSpeed);
+                }
+                else if (flying)
                 {
                     if (horizontalSq < 140f * 140f)
                     {
@@ -192,6 +217,13 @@ namespace HolyHelicopter
                         destination.y = enemy.Ground + 12f + Mathf.Sin(elapsed + enemy.Phase * 13f) * 4f;
                     }
                 }
+                else if (enemy.Role == 1)
+                {
+                    // Sentinels stay with their crypt; killing the generator does not erase its guards.
+                    float angle = enemy.Phase * 6.283f + elapsed * .055f;
+                    destination = enemy.Home + new Vector3(Mathf.Cos(angle) * 10f, 0f, Mathf.Sin(angle) * 10f);
+                    if (enemy.AttackTime > 3f) moveSpeed *= .35f;
+                }
                 else if (horizontalSq < 94f * 94f && elapsed > 3f && enemy.Phase < .74f)
                 {
                     // Fixed individual offsets create a dense moving crowd instead of one coincident point.
@@ -224,7 +256,7 @@ namespace HolyHelicopter
                 if (distanceSq > .3f)
                 {
                     float speed = moveSpeed;
-                    if (horizontalSq > 180f * 180f) speed *= .8f;
+                    if (!flying && horizontalSq > 180f * 180f) speed *= .8f;
                     float amount = Mathf.Min(1f, speed * dt / Mathf.Sqrt(distanceSq));
                     enemy.Position += move * amount;
                 }
@@ -235,23 +267,32 @@ namespace HolyHelicopter
                 if (!flying) enemy.Position.y = Mathf.Lerp(enemy.Position.y, enemy.Ground, Mathf.Min(1f, dt * 14f));
                 else enemy.Position.y = Mathf.Max(enemy.Position.y, enemy.Ground + 2.5f);
 
+                float contactRadius = enemy.Kind == EnemyKind.Gargoyle ? 3.2f : 2.3f;
                 if (flying && enemy.AttackState == 2 &&
-                    SegmentDistanceSquared(beforeMove, enemy.Position, player + Vector3.up * .4f) < 2.3f * 2.3f)
+                    SegmentDistanceSquared(beforeMove, enemy.Position, player + Vector3.up * .4f) < contactRadius * contactRadius)
                 {
                     enemy.AttackState = 0;
-                    enemy.AttackTime = 4.5f + enemy.Phase * 3f;
-                    if (_batHitClock <= 0f)
+                    bool heavy = enemy.Kind == EnemyKind.Gargoyle;
+                    enemy.AttackTime = heavy ? 2.4f + enemy.Phase * 1.1f : 4.5f + enemy.Phase * 3f;
+                    if (heavy && _heavyHitClock <= 0f)
+                    {
+                        _game.DamagePlayer(GargoyleDamage, "GARGOYLE TALON STRIKE");
+                        _heavyHitClock = 1.4f;
+                        _game.Effects.Burst(player, new Color(1f, .55f, .17f), 12, 1.4f);
+                    }
+                    else if (!heavy && _batHitClock <= 0f)
                     {
                         _game.DamagePlayer(2.6f, "DIVING BAT");
                         _batHitClock = .7f;
                     }
                 }
-                else if (enemy.Kind == EnemyKind.Necromancer && horizontalSq < 105f * 105f && enemy.AttackTime <= 0f)
+                else if (enemy.Kind == EnemyKind.Necromancer && horizontalSq <
+                    (enemy.Role == 1 ? 275f * 275f : 105f * 105f) && enemy.AttackTime <= 0f)
                 {
-                    if (_hexCastClock <= 0f && elapsed > 50f && BeginHex(enemy, player))
+                    if (_hexCastClock <= 0f && (elapsed > 50f || enemy.Role == 1) && BeginHex(enemy, player))
                     {
-                        _hexCastClock = Mathf.Lerp(2.1f, 1.25f, Escalation);
-                        enemy.AttackTime = Random.Range(6f, 10f);
+                        _hexCastClock = enemy.Role == 1 ? 1.1f : Mathf.Lerp(2.1f, 1.25f, Escalation);
+                        enemy.AttackTime = enemy.Role == 1 ? 4.1f + enemy.Phase * 1.8f : Random.Range(6f, 10f);
                         enemy.Flash = .85f;
                     }
                     else enemy.AttackTime = .3f + enemy.Phase * .3f;
@@ -263,10 +304,179 @@ namespace HolyHelicopter
             TickHexes(dt, player);
             float towerDanger = TowerCount == 0 ? 0f : Mathf.Clamp01(TowerHeight / Mathf.Max(3f, _game.Flight.Altitude));
             ThreatLevel = Mathf.Clamp01(Boarders * .1f + towerDanger * .6f + ChargingHexes * .15f +
-                ActiveHexes * .1f + Mathf.Min(DivingBats, 5) * .09f);
+                ActiveHexes * .1f + Mathf.Min(DivingBats, 5) * .09f +
+                EngagedGargoyles * .055f + ChargingGargoyles * .12f + DivingGargoyles * .2f);
         }
 
         float Escalation => Mathf.Clamp01(_game.Elapsed / Mathf.Max(30f, _game.Balance.EscalationSeconds));
+
+        static bool IsFlying(EnemyKind kind) => kind == EnemyKind.Bat || kind == EnemyKind.Gargoyle;
+
+        void SpawnGarrison(int cryptIndex)
+        {
+            Vector3 center = _game.Crypts[cryptIndex].Position;
+            for (int i = 0; i < 4 && Count < Capacity; i++)
+            {
+                float angle = i * Mathf.PI * .5f + .4f;
+                SpawnOne(center + new Vector3(Mathf.Cos(angle) * 16f, 0f, Mathf.Sin(angle) * 16f),
+                    i < 2 ? EnemyKind.Necromancer : EnemyKind.Gargoyle);
+                Enemy guard = _enemies[_count - 1];
+                guard.Home = center;
+                guard.CryptIndex = cryptIndex;
+                guard.Role = (byte)(i < 2 ? 1 : 2);
+                guard.AttackTime = 1f + i * .7f;
+                if (i < 2) guard.Health = 180f;
+                _enemies[_count - 1] = guard;
+            }
+        }
+
+        public void OnCryptDestroyed(Crypt crypt)
+        {
+            if (crypt == null || _enemies == null) return;
+            int site = _game.Crypts.IndexOf(crypt);
+            for (int i = 0; i < _count; i++)
+            {
+                Enemy enemy = _enemies[i];
+                if (enemy.Kind != EnemyKind.Gargoyle || enemy.CryptIndex != site || enemy.Role != 2) continue;
+                enemy.Role = 3;
+                enemy.AttackTime = Mathf.Min(enemy.AttackTime, 1.2f);
+                _enemies[i] = enemy;
+            }
+            // Delayed retaliation is physical: destroy or outrun a committed pass, then counterattack.
+            for (int i = 0; i < 2; i++)
+            {
+                if (!MakeRoomForRetaliation()) break;
+                Vector3 position = crypt.Position + new Vector3(i == 0 ? -25f : 25f, 0f, 22f);
+                SpawnOne(position, EnemyKind.Gargoyle);
+                Enemy pursuer = _enemies[_count - 1];
+                pursuer.Role = 3;
+                pursuer.Home = crypt.Position;
+                pursuer.CryptIndex = site;
+                pursuer.AttackTime = 2.5f + i;
+                _enemies[_count - 1] = pursuer;
+            }
+            _game.Message("CRYPT SEALED — STONE WINGS INBOUND! Watch for amber attack lines.");
+        }
+
+        bool MakeRoomForRetaliation()
+        {
+            if (Count < Capacity) return true;
+            // Recycle ordinary population without awarding a kill or salvage: sealing still has
+            // a meaningful response at the cap, and the global population remains strictly bounded.
+            for (int i = _count - 1; i >= 0; i--)
+            {
+                if (_enemies[i].Role != 0 || _enemies[i].Kind == EnemyKind.Gargoyle ||
+                    _enemies[i].Kind == EnemyKind.Necromancer) continue;
+                _enemies[i] = _enemies[--_count];
+                return true;
+            }
+            if (TowerCount > 0) { TowerCount--; return true; }
+            // A wholly elite-filled debug population still leaves space for the requested response.
+            if (_count > 0)
+            {
+                CancelCharges(_enemies[_count - 1].Id);
+                _count--;
+                return true;
+            }
+            return false;
+        }
+
+        void TickGargoyle(ref Enemy enemy, Vector3 player, float dt, out Vector3 destination, out float speed)
+        {
+            float distanceSquared = (player - enemy.Position).sqrMagnitude;
+            bool engaged = enemy.Role == 3 || distanceSquared < 285f * 285f || enemy.AttackState > 0;
+            if (enemy.Role == 2 && (player - enemy.Home).sqrMagnitude > 650f * 650f && enemy.AttackState != 2)
+                engaged = false;
+            float orbit = _game.Elapsed * .24f + enemy.Phase * 6.283f;
+            if (!engaged)
+            {
+                destination = enemy.Home + new Vector3(Mathf.Cos(orbit) * 26f,
+                    23f + Mathf.Sin(orbit * 1.4f) * 6f, Mathf.Sin(orbit) * 26f);
+                speed = 12f;
+                enemy.AttackState = 0;
+                return;
+            }
+            EngagedGargoyles++;
+            speed = GargoyleCruise;
+            destination = player + _game.Flight.Velocity * .45f;
+            // During recovery it passes to one side instead of sitting inside the aircraft.
+            if (enemy.AttackState == 0 && enemy.AttackTime > 0f && distanceSquared < 58f * 58f)
+            {
+                destination = player + new Vector3(Mathf.Cos(orbit) * 42f, 7f, Mathf.Sin(orbit) * 42f);
+                speed = 24f;
+            }
+            if (enemy.AttackState == 0 && enemy.AttackTime <= 0f && distanceSquared < 48f * 48f)
+            {
+                enemy.AttackState = 1;
+                enemy.AttackPhase = 1f;
+                enemy.AttackTarget = player + Vector3.up * .4f;
+                if (_game.Elapsed >= _nextWingWarning)
+                {
+                    _nextWingWarning = _game.Elapsed + 2f;
+                    _game.Audio.Play(SoundCue.Threat, .65f);
+                }
+                _game.Effects.Ring(enemy.Position, 3f, new Color(1f, .57f, .12f), .65f);
+            }
+            if (enemy.AttackState == 1)
+            {
+                ChargingGargoyles++;
+                enemy.AttackPhase -= dt;
+                enemy.Flash = .5f + Mathf.Sin(_game.Elapsed * 22f) * .3f;
+                Vector3 standOff = enemy.Position - player;
+                if (standOff.sqrMagnitude < .1f) standOff = Vector3.back;
+                // Back out before striking a hovering target. Otherwise a nearby recovering actor
+                // could drift into the cockpit during its warning and hit on the first dive frame.
+                destination = player + _game.Flight.Velocity * .25f + standOff.normalized * 44f;
+                if (enemy.AttackPhase > .45f)
+                {
+                    Vector3 launchPosition = enemy.Position + (destination - enemy.Position).normalized *
+                        Mathf.Min(GargoyleCruise * enemy.AttackPhase,
+                            (destination - enemy.Position).magnitude + _game.Flight.Velocity.magnitude * enemy.AttackPhase);
+                    Vector3 futurePlayer = player + _game.Flight.Velocity * enemy.AttackPhase;
+                    float lead = InterceptTime(futurePlayer - launchPosition, _game.Flight.Velocity, GargoyleDive, 4.5f);
+                    enemy.AttackTarget = futurePlayer + _game.Flight.Velocity * lead + Vector3.up * .4f;
+                }
+                Vector3 predicted = enemy.AttackTarget;
+                // The amber line visibly predicts the attack; the dive never steers after commitment.
+                if ((_frame + enemy.Id) % 5 == 0)
+                    _game.Effects.Beam(enemy.Position + Vector3.up * 2f, predicted, new Color(1f, .57f, .12f), .11f, .12f);
+                if (enemy.AttackPhase <= 0f && (enemy.Position - player).sqrMagnitude >= 40f * 40f)
+                {
+                    enemy.AttackTarget = predicted + (predicted - enemy.Position).normalized * 18f;
+                    enemy.AttackState = 2;
+                    enemy.AttackPhase = 3.6f;
+                    _game.Effects.Burst(enemy.Position + Vector3.up * 2f, new Color(1f, .68f, .2f), 12, 1.3f);
+                }
+            }
+            if (enemy.AttackState == 2)
+            {
+                DivingGargoyles++;
+                enemy.AttackPhase -= dt;
+                destination = enemy.AttackTarget;
+                speed = GargoyleDive;
+                if ((_frame + enemy.Id) % 4 == 0)
+                    _game.Effects.Beam(enemy.Position, enemy.Position - (destination - enemy.Position).normalized * 5f,
+                        new Color(1f, .54f, .1f), .35f, .16f);
+                if (enemy.AttackPhase <= 0f || (destination - enemy.Position).sqrMagnitude < 3f)
+                {
+                    enemy.AttackState = 0;
+                    enemy.AttackTime = 2.2f + enemy.Phase * 1.3f;
+                }
+            }
+        }
+
+        static float InterceptTime(Vector3 relative, Vector3 velocity, float speed, float maximum)
+        {
+            float a = velocity.sqrMagnitude - speed * speed;
+            float b = 2f * Vector3.Dot(relative, velocity);
+            float c = relative.sqrMagnitude;
+            float discriminant = b * b - 4f * a * c;
+            if (discriminant < 0f || Mathf.Abs(a) < .001f) return Mathf.Min(maximum, Mathf.Sqrt(c) / speed);
+            float root = Mathf.Sqrt(discriminant);
+            float first = (-b - root) / (2f * a), second = (-b + root) / (2f * a);
+            float time = first > 0f ? first : second;
+            return Mathf.Clamp(time, 0f, maximum);
+        }
 
         void TickSpawning(float dt)
         {
@@ -313,7 +523,7 @@ namespace HolyHelicopter
 
         void RefreshArmyTargets()
         {
-            for (int village = 0; village < 2; village++)
+            for (int village = 0; village < _armyTargets.Length; village++)
             {
                 Vector3 center = World.VillagePosition(village);
                 _armyTargets[village] = center;
@@ -321,10 +531,7 @@ namespace HolyHelicopter
                 for (int s = 0; s < _game.Survivors.Count; s++)
                 {
                     Survivor survivor = _game.Survivors[s];
-                    if (!survivor.Alive) continue;
-                    Vector3 toVillage = survivor.Position - center;
-                    Vector3 toOther = survivor.Position - World.VillagePosition(1 - village);
-                    if (toVillage.sqrMagnitude > toOther.sqrMagnitude || count >= 16) continue;
+                    if (!survivor.Alive || survivor.Sheltered || survivor.Village != village || count >= 16) continue;
                     _civilianTargets[village * 16 + count++] = survivor.Position;
                 }
                 _civilianTargetCounts[village] = count;
@@ -334,19 +541,26 @@ namespace HolyHelicopter
         bool BeginHex(Enemy caster, Vector3 player)
         {
             Vector3 from = caster.Position + Vector3.up * 2.4f;
-            for (int i = 0; i < _hexes.Length; i++)
+            bool sentinel = caster.Role == 1;
+            int remaining = sentinel ? 3 : 1, emitted = 0;
+            for (int i = 0; i < _hexes.Length && remaining > 0; i++)
             {
                 if (_hexes[i].Active) continue;
                 _hexes[i] = new HexProjectile
                 {
-                    Active = true, Position = from, Charge = 1.05f, Life = 5.7f, SourceId = caster.Id,
+                    Active = true, Position = from, Charge = sentinel ? 1.3f : 1.05f,
+                    Life = sentinel ? 8.5f : 5.7f, SourceId = caster.Id,
+                    Speed = sentinel ? 62f : 33f, Damage = sentinel ? NecromancerDamage : 5.5f,
+                    Pattern = (byte)(sentinel ? 1 : 0), Spread = sentinel ? (emitted - 1) * 5.2f : 0f,
                     // Lock the prediction now. A pilot who changes course can dodge the entire shot.
                     Target = player + _game.Flight.Velocity * .42f + Vector3.up * .4f
                 };
-                _game.Effects.Ring(World.Ground(from.x, from.z), 3.4f, new Color(.85f, .4f, 1f), .75f);
-                return true;
+                remaining--;
+                emitted++;
             }
-            return false;
+            if (emitted > 0)
+                _game.Effects.Ring(World.Ground(from.x, from.z), sentinel ? 6f : 3.4f, new Color(.85f, .4f, 1f), .75f);
+            return emitted > 0;
         }
 
         void TickHexes(float dt, Vector3 player)
@@ -366,6 +580,14 @@ namespace HolyHelicopter
                 if (hex.Life <= 0f) { hex.Active = false; _hexes[i] = hex; continue; }
                 if (hex.Charge > 0f)
                 {
+                    if (hex.Pattern == 1 && hex.Charge > .45f)
+                    {
+                        Vector3 velocity = _game.Flight.Velocity;
+                        Vector3 launchTarget = player + velocity * hex.Charge;
+                        float lead = InterceptTime(launchTarget - hex.Position, velocity, hex.Speed, 5f);
+                        Vector3 side = Vector3.Cross(Vector3.up, (launchTarget - hex.Position).normalized);
+                        hex.Target = launchTarget + velocity * lead + Vector3.up * .4f + side * hex.Spread;
+                    }
                     hex.Charge -= dt;
                     ChargingHexes++;
                     if (visual)
@@ -375,7 +597,7 @@ namespace HolyHelicopter
                     }
                     if (hex.Charge <= 0f)
                     {
-                        hex.Velocity = (hex.Target - hex.Position).normalized * 33f;
+                        hex.Velocity = (hex.Target - hex.Position).normalized * hex.Speed;
                         _game.Effects.Burst(hex.Position, boltColor, 8, 1f);
                     }
                 }
@@ -394,7 +616,7 @@ namespace HolyHelicopter
                         hex.Active = false;
                         if (_hexHitClock <= 0f)
                         {
-                            _game.DamagePlayer(5.5f, "NECROMANCER HEX");
+                            _game.DamagePlayer(hex.Damage, hex.Pattern == 1 ? "CRYPT SENTINEL HEX" : "NECROMANCER HEX");
                             _hexHitClock = .75f;
                         }
                         _game.Effects.Burst(hex.Position, boltColor, 12, 1.2f);
@@ -532,7 +754,7 @@ namespace HolyHelicopter
             int count = 0;
             for (int i = 0; i < _count; i++)
             {
-                if (_enemies[i].Kind == EnemyKind.Bat) continue;
+                if (IsFlying(_enemies[i].Kind)) continue;
                 Vector3 offset = point - _enemies[i].Position;
                 offset.y = 0f;
                 float distanceSquared = offset.sqrMagnitude;
@@ -567,6 +789,32 @@ namespace HolyHelicopter
             return used;
         }
 
+        /// <summary>Priority contacts first, then sampled infantry; no allocations and no lost nearby heavies.</summary>
+        public int GetThreatRadarPoints(Vector3 origin, float range, ThreatRadarPoint[] buffer)
+        {
+            if (buffer == null || buffer.Length == 0 || _enemies == null) return 0;
+            int used = 0;
+            float rangeSquared = range * range;
+            for (int pass = 0; pass < 3; pass++)
+            {
+                int step = pass < 2 ? 1 : Mathf.Max(1, Mathf.CeilToInt((float)_count / Mathf.Max(1, buffer.Length - used)));
+                for (int i = 0; i < _count && used < buffer.Length; i += step)
+                {
+                    Enemy enemy = _enemies[i];
+                    int priority = enemy.Kind == EnemyKind.Gargoyle ? 0 : enemy.Kind == EnemyKind.Necromancer ? 1 : 2;
+                    if (priority != pass) continue;
+                    Vector3 delta = enemy.Position - origin;
+                    if (delta.x * delta.x + delta.z * delta.z > rangeSquared) continue;
+                    buffer[used++] = new ThreatRadarPoint
+                    {
+                        Position = enemy.Position, Kind = enemy.Kind,
+                        Heavy = enemy.Kind == EnemyKind.Gargoyle, Role = enemy.Role, Id = enemy.Id
+                    };
+                }
+            }
+            return used;
+        }
+
         public void SpawnHorde(Vector3 center, int count)
         {
             if (_enemies == null) return;
@@ -590,6 +838,7 @@ namespace HolyHelicopter
             if (roll < threshold) return EnemyKind.Vampire;
             threshold += Mathf.Lerp(.01f, .035f, progress);
             if (roll < threshold) return EnemyKind.Bat;
+            if (_game.Elapsed > 130f && roll > .992f) return EnemyKind.Gargoyle;
             return _game.Elapsed > 55f ? EnemyKind.Necromancer : EnemyKind.Skeleton;
         }
 
@@ -598,7 +847,7 @@ namespace HolyHelicopter
             if (_count >= Capacity) return;
             float ground = World.Height(position.x, position.z);
             float phase = Random.value;
-            position.y = ground + (kind == EnemyKind.Bat ? 9f + phase * 13f : 0f);
+            position.y = ground + (IsFlying(kind) ? 9f + phase * 13f : 0f);
             float health = 26f, speed = 3.1f;
             switch (kind)
             {
@@ -606,13 +855,22 @@ namespace HolyHelicopter
                 case EnemyKind.Vampire: health = 85f; speed = 5.7f; break;
                 case EnemyKind.Bat: health = 18f; speed = 13f; break;
                 case EnemyKind.Necromancer: health = 150f; speed = 2.5f; break;
+                case EnemyKind.Gargoyle: health = 210f; speed = GargoyleCruise; break;
+            }
+            int nearestVillage = 0;
+            float nearest = float.PositiveInfinity;
+            for (int i = 0; i < _armyTargets.Length; i++)
+            {
+                float distance = (position - _armyTargets[i]).sqrMagnitude;
+                if (distance >= nearest) continue;
+                nearest = distance;
+                nearestVillage = i;
             }
             _enemies[_count++] = new Enemy
             {
-                Position = position, Ground = ground, Kind = kind, Health = health,
+                Position = position, Home = position, Ground = ground, Kind = kind, Health = health, CryptIndex = -1,
                 Phase = phase, Speed = speed * Random.Range(.82f, 1.2f),
-                Army = (byte)((position - World.VillagePosition(0)).sqrMagnitude <
-                    (position - World.VillagePosition(1)).sqrMagnitude ? 0 : 1),
+                Army = (byte)nearestVillage,
                 AttackTime = Random.Range(3f, 10f), Id = ++_nextEnemyId
             };
         }
@@ -625,12 +883,13 @@ namespace HolyHelicopter
             for (int i = _count - 1; i >= 0; i--)
             {
                 Enemy enemy = _enemies[i];
-                Vector3 target = enemy.Position + Vector3.up * .85f;
+                Vector3 target = enemy.Position + Vector3.up * (enemy.Kind == EnemyKind.Gargoyle ? 0f : .85f);
                 float distanceSq = (target - center).sqrMagnitude;
                 if (distanceSq > radiusSq) continue;
                 float attenuation = Mathf.Lerp(1f, .55f, Mathf.Sqrt(distanceSq) / radius);
                 enemy.Health -= damage * attenuation * Weakness(enemy.Kind, kind);
                 enemy.Flash = 1f;
+                InterruptAttack(ref enemy, damage * attenuation);
                 if (enemy.Health <= 0f) { KillEnemy(i); killed++; }
                 else _enemies[i] = enemy;
             }
@@ -649,23 +908,50 @@ namespace HolyHelicopter
         public bool DamageRay(Vector3 origin, Vector3 direction, float range, float radius, float damage, DamageKind kind, out Vector3 hit)
         {
             direction.Normalize();
+            if (!FindRayThreat(origin, direction, range, radius, out hit, out int nearest, out bool towerHit)) return false;
+            if (damage <= 0f) return true;
+            if (towerHit)
+            {
+                DamageTower(damage, hit);
+                return true;
+            }
+            Enemy targetEnemy = _enemies[nearest];
+            targetEnemy.Health -= damage * Weakness(targetEnemy.Kind, kind);
+            targetEnemy.Flash = 1f;
+            InterruptAttack(ref targetEnemy, damage);
+            if (targetEnemy.Health <= 0f) KillEnemy(nearest);
+            else _enemies[nearest] = targetEnemy;
+            return true;
+        }
+
+        /// <summary>Aiming query only: does not damage, flash, interrupt, or dismantle towers.</summary>
+        public bool RaycastThreat(Vector3 origin, Vector3 direction, float range, float radius, out Vector3 hit)
+        {
+            direction.Normalize();
+            return FindRayThreat(origin, direction, range, radius, out hit, out _, out _);
+        }
+
+        bool FindRayThreat(Vector3 origin, Vector3 direction, float range, float radius, out Vector3 hit,
+            out int nearest, out bool towerHit)
+        {
             hit = origin + direction * range;
-            if (_enemies == null || direction.sqrMagnitude < .5f) return false;
-            int nearest = -1;
+            nearest = -1;
+            towerHit = false;
+            if (_enemies == null || direction.sqrMagnitude < .5f || range <= 0f) return false;
             float best = range;
             for (int i = 0; i < _count; i++)
             {
-                Vector3 center = _enemies[i].Position + Vector3.up * 1f;
+                Enemy enemy = _enemies[i];
+                Vector3 center = enemy.Position + Vector3.up * (enemy.Kind == EnemyKind.Gargoyle ? 0f : 1f);
                 Vector3 offset = center - origin;
                 float along = Vector3.Dot(offset, direction);
                 if (along < 0f || along > best) continue;
-                float hitRadius = radius + (_enemies[i].Kind == EnemyKind.Bat ? .85f : .7f);
+                float hitRadius = radius + (enemy.Kind == EnemyKind.Gargoyle ? 2.4f : enemy.Kind == EnemyKind.Bat ? .85f : .7f);
                 float distanceSq = offset.sqrMagnitude - along * along;
                 if (distanceSq > hitRadius * hitRadius) continue;
                 nearest = i;
                 best = along;
             }
-            bool towerHit = false;
             if (TowerCount > 0)
             {
                 for (float height = 1f; height < TowerHeight + 1f; height += 1.5f)
@@ -678,20 +964,31 @@ namespace HolyHelicopter
                     best = along;
                 }
             }
-            if (towerHit)
-            {
-                hit = origin + direction * best;
-                DamageTower(damage, hit);
-                return true;
-            }
-            if (nearest < 0) return false;
+            if (!towerHit && nearest < 0) return false;
             hit = origin + direction * best;
-            Enemy targetEnemy = _enemies[nearest];
-            targetEnemy.Health -= damage * Weakness(targetEnemy.Kind, kind);
-            targetEnemy.Flash = 1f;
-            if (targetEnemy.Health <= 0f) KillEnemy(nearest);
-            else _enemies[nearest] = targetEnemy;
             return true;
+        }
+
+        void InterruptAttack(ref Enemy enemy, float damage)
+        {
+            if (enemy.Kind == EnemyKind.Necromancer && damage > 0f)
+            {
+                CancelCharges(enemy.Id);
+                enemy.AttackTime = Mathf.Max(enemy.AttackTime, 1.7f);
+            }
+            if (enemy.Kind == EnemyKind.Gargoyle && damage >= 36f && enemy.AttackState > 0)
+            {
+                enemy.AttackState = 0;
+                enemy.AttackTime = 1.3f;
+                _game.Effects.Burst(enemy.Position + Vector3.up * 2f, new Color(1f, .7f, .3f), 8, 1f);
+            }
+        }
+
+        void CancelCharges(int sourceId)
+        {
+            for (int i = 0; i < _hexes.Length; i++)
+                if (_hexes[i].Active && _hexes[i].Charge > 0f && _hexes[i].SourceId == sourceId)
+                    _hexes[i].Active = false;
         }
 
         static float Weakness(EnemyKind enemy, DamageKind weapon)
@@ -699,7 +996,7 @@ namespace HolyHelicopter
             if (weapon == DamageKind.Water)
                 return enemy == EnemyKind.Skeleton || enemy == EnemyKind.Zombie ? 1.65f : .9f;
             if (weapon == DamageKind.Silver)
-                return enemy == EnemyKind.Vampire || enemy == EnemyKind.Bat ? 1.5f : 1f;
+                return enemy == EnemyKind.Vampire || enemy == EnemyKind.Bat || enemy == EnemyKind.Gargoyle ? 1.5f : 1f;
             if (weapon == DamageKind.UV)
                 return enemy == EnemyKind.Vampire || enemy == EnemyKind.Bat ? 2.8f : 1.15f;
             return weapon == DamageKind.Rocket ? 1.15f : 1f;
@@ -709,16 +1006,13 @@ namespace HolyHelicopter
         {
             Enemy dead = _enemies[index];
             _enemies[index] = _enemies[--_count];
-            if (dead.Kind == EnemyKind.Necromancer)
-                for (int i = 0; i < _hexes.Length; i++)
-                    if (_hexes[i].Active && _hexes[i].Charge > 0f && _hexes[i].SourceId == dead.Id)
-                        _hexes[i].Active = false;
+            if (dead.Kind == EnemyKind.Necromancer) CancelCharges(dead.Id);
             _game.OnEnemyKilled(dead.Position + Vector3.up * .8f, dead.Kind);
         }
 
         int DamageTower(float damage, Vector3 hit)
         {
-            if (TowerCount <= 0) return 0;
+            if (TowerCount <= 0 || damage <= 0f) return 0;
             _towerFlash = 1f;
             _towerIntegrity -= damage;
             int killed = Mathf.Min(TowerCount, Mathf.Max(1, Mathf.RoundToInt(damage / 7f)));
@@ -768,11 +1062,13 @@ namespace HolyHelicopter
             for (int i = 0; i < _count; i++)
             {
                 Enemy enemy = _enemies[i];
-                if ((enemy.Position - cameraPosition).sqrMagnitude > 470f * 470f) continue;
-                float size = enemy.Kind == EnemyKind.Necromancer ? 3.15f : enemy.Kind == EnemyKind.Vampire ? 2.65f : enemy.Kind == EnemyKind.Bat ? 1.15f : 2.35f;
+                if ((enemy.Position - cameraPosition).sqrMagnitude > 720f * 720f) continue;
+                float size = enemy.Kind == EnemyKind.Gargoyle ? 6.4f : enemy.Kind == EnemyKind.Necromancer ?
+                    (enemy.Role == 1 ? 4.5f : 3.15f) : enemy.Kind == EnemyKind.Vampire ? 2.65f : enemy.Kind == EnemyKind.Bat ? 1.15f : 2.35f;
                 size *= .9f + enemy.Phase * .2f;
-                WriteBillboard(visible++, enemy.Position, enemy.Ground, right, up,
-                    size * .8f, size, enemy.Kind, enemy.Phase, enemy.Flash, animation);
+                Vector3 spritePosition = enemy.Position - Vector3.up * (enemy.Kind == EnemyKind.Gargoyle ? 2.4f : 0f);
+                WriteBillboard(visible++, spritePosition, enemy.Ground, right, up,
+                    size * (enemy.Kind == EnemyKind.Gargoyle ? 1.4f : .8f), size, enemy.Kind, enemy.Phase, enemy.Flash, animation);
             }
             float time = _game.Elapsed;
             for (int i = 0; i < TowerCount && visible < Capacity; i++)
@@ -808,7 +1104,7 @@ namespace HolyHelicopter
             mesh.SetIndexBufferData(indices, 0, 0, indices.Length);
             mesh.subMeshCount = 1;
             mesh.SetSubMesh(0, new SubMeshDescriptor(0, 0, MeshTopology.Triangles), MeshUpdateFlags.DontRecalculateBounds);
-            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 2200f);
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * (World.Radius * 2f + 600f));
             var holder = new GameObject(name);
             holder.transform.SetParent(transform, false);
             // Vertices are generated directly in world coordinates, so this renderer remains at world origin.
@@ -832,7 +1128,8 @@ namespace HolyHelicopter
             Vector3 half = right * (width * .5f);
             Vector3 top = up * height + right * (sway * width);
             int frame = Mathf.FloorToInt(animation * 7f + phase * 13f) % 4;
-            float x0 = (int)kind * .2f + .001f, x1 = x0 + .198f;
+            float cellWidth = 1f / MonsterAtlas.Columns;
+            float x0 = (int)kind * cellWidth + .001f, x1 = x0 + cellWidth - .002f;
             float y0 = frame * .25f + .001f, y1 = y0 + .248f;
             Color32 color = new Color32((byte)(Mathf.Clamp01(flash) * 255f), 0, 0, 255);
             SetVertex(_spriteVertices, v, center - half, x0, y0, color);
@@ -861,7 +1158,7 @@ namespace HolyHelicopter
             mesh.SetVertexBufferData(vertices, 0, 0, count * 4, 0,
                 MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices);
             mesh.SetSubMesh(0, new SubMeshDescriptor(0, count * 6, MeshTopology.Triangles)
-                { bounds = new Bounds(Vector3.zero, Vector3.one * 2200f), vertexCount = count * 4 },
+                { bounds = new Bounds(Vector3.zero, Vector3.one * (World.Radius * 2f + 600f)), vertexCount = count * 4 },
                 MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices);
         }
 
