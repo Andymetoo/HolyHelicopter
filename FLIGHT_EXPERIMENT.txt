@@ -1,0 +1,102 @@
+HOLY HELICOPTER - FLIGHT CONTROL EXPERIMENT
+
+LAUNCH AND COMPARE
+Builds/FlightExperiment/Holy Helicopter.exe (keep the entire folder together).
+F4 switches instantly between A / DIRECT STEERING and B / BOUNDED RETICLE.
+The active mode appears above the compass. Mode selection survives mission restarts
+within the same application session; a fresh application starts in A.
+F5 pauses and opens live flight tuning. ESC resumes. F5 closes the tuning panel.
+ESC also exposes sensitivity, invert Y and overall cockpit motion.
+
+A / DIRECT STEERING
+Mouse X turns the nose by the mouse displacement in the same frame. There is no
+heading target, yaw acceleration, queued turn intent or delayed catch-up. Mouse Y
+changes elevation directly. Movement still has moderate world-space momentum.
+The B yaw-rate slider does not cap A: use sensitivity and A / yaw response.
+
+B / BOUNDED RETICLE
+The locked mouse moves a gun sight inside a central 20% x 20% viewport box.
+Corner marks show the aim zone; small centre marks show the horizontal dead zone.
+Horizontal sight displacement commands yaw rate immediately. Greater displacement
+turns faster; the sight remains displaced when the mouse stops. Move it back into
+the centre stripe to stop turning. Opposite displacement reverses yaw immediately.
+Mouse movement beyond the horizontal bound is discarded rather than queued.
+
+Vertical mouse input moves the sight within the box. At the upper/lower edge,
+continued mouse movement immediately carries the pilot's view up/down. Elevation
+stops when the mouse stops; vertical displacement does not command continuing pitch.
+The aircraft stays physically level except for movement animation. Gun elevation
+extends to roughly 78 degrees down / 28 degrees up (less at full lateral deflection).
+This permits steep downward shots without tilting the aircraft into the ground.
+There is no delayed camera-follow or aircraft-follow chain.
+
+SWITCHING AND PRESENTATION
+Switching preserves the world weapon ray, camera pose, eye position and velocity.
+B's gun bearing becomes A's nose bearing; the off-centre view eases toward the sight
+in about 0.2 seconds. This small view trim does not move the weapon ray.
+Body and canopy banking/pitch show acceleration, strafe, braking and turns; the
+optics stay stabilized. Engine/rotor load responds to movement and collective.
+Camera translation is limited to 3.5 cm times the cockpit-motion setting. No shake,
+head bob or changing field of view. The reticle projects the actual weapon solution.
+Silver, water, UV and rockets all use this shared ray; launched rockets retain their
+aimed destination. Rapture remains the existing area attack beneath the helicopter.
+
+UNCHANGED CONTROLS
+WASD: heading-relative forward / reverse / strafe. Q/E: descend / ascend.
+Wheel: change held altitude. LMB/RMB: independently assigned weapon triggers.
+TAB: free/capture cursor and assign weapons. G: navigation chart. ESC: pause.
+The chart/armory parks steering and brakes movement. Mouse recapture discards the
+cursor warp sample. F3 telemetry and F6-F9 debug actions remain available.
+World, enemies, weapons, mission, objectives, supplies, economy and progression
+retain their existing content and rules.
+
+INITIAL TUNING
+Forward / strafe / reverse cruise: 23 / 18 / 16 m/s.
+Forward acceleration: 28 m/s squared. Strafe: 34. Release braking: 46.
+Opposing thrust: 52 m/s squared until original momentum is cancelled.
+Vertical acceleration: 32 m/s squared; climb/descent 10 / 8 m/s.
+B maximum yaw: 160 deg/s. Dead zone: 12% of horizontal half-zone.
+B steering curve exponent: 1.25. Aim zone: 20% full viewport width and height.
+Mouse sensitivity: 0.10 degrees per device delta count. A yaw response: 1.0.
+Body bank/pitch limit: 13 / 10 degrees. Body response: 9 per second.
+Cockpit motion: 70%; view bank/pitch presentation: 0.3 / 0.8.
+
+Tune these in F5 or on the runtime FlightController in Unity's Inspector. Flight
+parameters reset on mission restart. Only the mode persists across that restart.
+No settings are written to disk and no elaborate settings menu is introduced.
+
+VALIDATION
+Runtime flight, integration, scripted mission and UI results are recorded in
+Logs/FlightExperiment*. Tests measure correctness and responsiveness only.
+The next human playtest must judge comfort, enjoyment and which mode works better.
+MEASURED RESULTS
+Both modes: 95% forward cruise in 0.78s; 99% in 0.82s.
+Release from 23m/s: 0.50s to stop, 5.65m traveled. Reverse crosses zero in 0.45s.
+Forward/strafe/reverse cruise: 23/18/16m/s. Full B yaw: 160deg/s (90deg in
+0.56s; 180deg in 1.13s at full deflection). A applies mouse displacement in-frame.
+Seven-second command routes at 30/60/120Hz agree within 0.001m / 0.001deg.
+Warm flight ticks: zero managed bytes across 240 ticks in each mode (excludes HUD).
+64/64 runtime integration/flight/combat checks pass, including real weapon hits,
+terrain clearance, altitude reversal, supply approach, menu ownership and mode trim.
+Scripted A mission completes in 8:09 simulated time: eight delivered, four seals,
+14 supplies, four civilian casualties. This retains perfect route/target knowledge.
+22/22 desktop UI captures pass, including 576p/720p/900p/1080p, 4:3 and ultrawide,
+lower-window aiming, navigation, armory, pause and tuning. Representative images
+were visually inspected. These are correctness checks, not proof of enjoyable flight.
+
+WINDOWS BUILD METHOD / ENVIRONMENT LIMIT
+A full Unity package export stalled during package-manager startup. Disabling the
+package manager starts the editor, but prevents Input System references from loading.
+The runnable Windows player therefore reuses the existing Unity 6000.4.1f1 Mono
+runtime and unchanged scene/assets, with Assembly-CSharp rebuilt from all current
+runtime source using Unity's shipped Roslyn compiler and player DLL references.
+That exact player passed the runtime, mission and desktop capture checks above.
+No native or scene asset changes were needed. A conventional full Unity export
+remains unverified in this environment. Compilation response: Logs/FlightExperiment-player.rsp.
+The same tested assembly is installed in Builds/HolyHelicopter (the usual launch
+path) and Builds/FlightExperiment. Keep each whole build directory together.
+
+Reports:
+Logs/FlightExperiment-smoke-release.json
+Logs/FlightExperiment-mission.json
+Logs/FlightExperiment-UI-final/HolyHelicopter-ui-report.json

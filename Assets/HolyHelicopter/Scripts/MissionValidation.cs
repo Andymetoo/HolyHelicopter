@@ -47,6 +47,8 @@ namespace HolyHelicopter
             Application.logMessageReceived += CaptureError;
             while (Game.I == null) yield return null;
             game = Game.I; game.enabled = false; game.Begin(); game.SetCursor(true); game.Audio.Muted = true;
+            // This pilot supplies desired angular displacement, rather than persistent reticle position.
+            game.Flight.SetMode(FlightControlMode.Direct);
             wallDeadline = Time.realtimeSinceStartup + 300;
             // Evacuate the nearer settlement before the invasion reaches full strength.
             for (int i = 0; i < 8 && !game.GameOver; i++)

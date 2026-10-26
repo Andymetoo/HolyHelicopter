@@ -106,6 +106,10 @@ namespace HolyHelicopter
             game.SuppliesCollected = 7;
             game.Passengers = 2;
             game.Rescued = 1;
+            // Force a desktop presentation before the first small capture, even if the process was
+            // launched hidden and its saved window dimensions already match that first capture.
+            Screen.SetResolution(1600, 900, FullScreenMode.Windowed);
+            for (int frame = 0; frame < 16; frame++) yield return null;
             // No PlayerPrefs or persistent settings are changed. The test exits after these frames.
             int[,] sizes = { { 1024, 576 }, { 1280, 720 }, { 1600, 900 }, { 1920, 1080 } };
             for (int i = 0; i < sizes.GetLength(0); i++)
@@ -115,7 +119,21 @@ namespace HolyHelicopter
                 yield return SaveCapture("flight", width, height);
                 PrepareArmory();
                 yield return SaveCapture("armory", width, height);
+                PrepareFlight();
+                game.Flight.SetMode(FlightControlMode.BoundedReticle);
+                game.Flight.TickCommand(1f / 60, Vector2.right, .5f, 6, 18);
+                game.Arsenal.Tick(0, false);
+                yield return SaveCapture("bounded-reticle", width, height);
+                game.Flight.SetMode(FlightControlMode.Direct);
             }
+
+            PrepareFlight();
+            game.Flight.SetMode(FlightControlMode.BoundedReticle);
+            game.Flight.TickCommand(1f / 60, Vector2.right, 0, 100, 55);
+            game.Arsenal.Tick(0, false);
+            yield return SaveCapture("bounded-lower-window", 1280, 960);
+            yield return SaveCapture("bounded-lower-window", 1920, 810);
+            game.Flight.SetMode(FlightControlMode.Direct);
 
             PrepareFlight();
             game.Hud.ShowChart = true;
@@ -140,6 +158,9 @@ namespace HolyHelicopter
             game.Started = true;
             showPause = game.Paused = true;
             yield return SaveCapture("pause", 1024, 576);
+            game.Hud.ShowFlightTuning = true;
+            yield return SaveCapture("flight-tuning", 1024, 576);
+            game.Hud.ShowFlightTuning = false;
             showPause = game.Paused = false;
             game.ShowHelp = true;
             yield return SaveCapture("manual", 1024, 576);
@@ -243,11 +264,20 @@ namespace HolyHelicopter
             report.captures.Add(capture);
             Screen.SetResolution(width, height, FullScreenMode.Windowed);
             for (int i = 0; i < 8; i++) yield return null;
+            // Recompute the shared gun trace after an aspect-ratio change, as Game.Step does in play.
+            game.Arsenal.Tick(0, false);
             capture.actualWidth = Screen.width;
             capture.actualHeight = Screen.height;
             bool requested = false;
             try
             {
+                if (game.Flight.Mode == FlightControlMode.BoundedReticle)
+                {
+                    Vector3 sight = game.Flight.Camera.WorldToViewportPoint(game.Arsenal.AimPoint);
+                    Vector2 half = game.Flight.ReticleHalfBounds;
+                    if (sight.z <= 0 || Mathf.Abs(sight.x - .5f) > half.x + .002f || Mathf.Abs(sight.y - .5f) > half.y + .002f)
+                        throw new InvalidOperationException("Resized viewport moved the actual weapon sight outside its aim zone.");
+                }
                 if (File.Exists(capture.path)) File.Delete(capture.path);
                 ScreenCapture.CaptureScreenshot(capture.path);
                 requested = true;

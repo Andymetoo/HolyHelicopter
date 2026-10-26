@@ -141,6 +141,14 @@ namespace HolyHelicopter
             if (keys.mKey.wasPressedThisFrame) Audio.Muted = !Audio.Muted;
             if (keys.gKey.wasPressedThisFrame && !Paused) { Hud.ShowChart = !Hud.ShowChart; SetCursor(Hud.ShowChart); }
             if (keys.f3Key.wasPressedThisFrame) ShowDebug = !ShowDebug;
+            if (keys.f4Key.wasPressedThisFrame)
+            {
+                Flight.ToggleMode();
+                Message(Flight.ModeLabel + " / F4 switches, F5 tunes. " + (Flight.Mode == FlightControlMode.BoundedReticle
+                    ? "Move the sight sideways to turn; bring it to centre to stop. Mouse down aims through the lower window."
+                    : "Mouse directly turns the nose and aims vertically."));
+            }
+            if (keys.f5Key.wasPressedThisFrame) ToggleFlightTuning();
             if (keys.f6Key.wasPressedThisFrame)
             {
                 Vector3 point = Flight.transform.position + Flight.transform.forward * 60;
@@ -177,9 +185,16 @@ namespace HolyHelicopter
             SetCursor(Paused || Hud.ShowChart);
         }
 
+        public void ToggleFlightTuning()
+        {
+            if (!Paused) { Hud.ShowFlightTuning = true; TogglePause(); }
+            else Hud.ShowFlightTuning = !Hud.ShowFlightTuning;
+        }
+
         public void SetCursor(bool free)
         {
             CursorFree = free;
+            if (Flight) Flight.SuspendInput();
             Cursor.lockState = free ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = free;
         }

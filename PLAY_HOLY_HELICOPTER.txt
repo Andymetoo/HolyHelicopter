@@ -1,4 +1,4 @@
-HOLY HELICOPTER - OPERATION MIDNIGHT MASS / PLAYTEST PASS 2
+HOLY HELICOPTER - OPERATION MIDNIGHT MASS / FLIGHT CONTROL EXPERIMENT
 
 LAUNCH
 Run Builds/HolyHelicopter/Holy Helicopter.exe. Keep its build folder together.
@@ -24,7 +24,7 @@ Right-click the chart for automatic objective guidance. The world stays live.
 
 CONTROLS
 WASD         Move relative to helicopter heading
-Mouse        Turn / aim vertically, independently of body tilt
+Mouse        A: direct turn / elevation. B: bounded gun sight / rate steering
 Q / E        Descend / ascend
 Wheel        Change held altitude
 LMB / RMB    Fire assigned weapons, including both together
@@ -35,12 +35,18 @@ H            Field manual
 M            Mute / unmute
 G            Open / close navigation chart
 R            Restart after victory or defeat
+F4           Switch A / direct steering and B / bounded reticle live
+F5           Pause and open flight tuning; ESC resumes
 F            Reserved
 
-The helicopter accelerates to 23 m/s over about 2.7 seconds. Releasing the controls
-brakes over roughly 23 metres. Reverse thrust and heading changes preserve momentum.
-Aim remains stabilized as the cockpit pitches and banks. Turning is rate-limited;
-lead moving targets and allow room to slow down for rescues.
+The helicopter reaches 95% of 23m/s cruise in 0.78s and stops in 0.50s / 5.65m.
+A applies mouse turns immediately. B confines the sight to a central 20% box:
+move it sideways to turn, then back into the centre stripe to stop turning.
+Mouse Y aims the gun; at the vertical sight limit the pilot looks further down/up.
+Gun elevation permits steep downward shots without pitching the aircraft into terrain.
+F4 switches live; mode survives mission restarts. F5 exposes session tuning.
+Body/canopy bank and pitch communicate movement while gun optics stay stabilized.
+See FLIGHT_EXPERIMENT.txt for tuning, measured checks and Windows build details.
 
 SUPPLY RUNS AND UPGRADES
 Fly below 46 ft across cargo boxes or fuel drums to hook them automatically.

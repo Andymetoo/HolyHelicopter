@@ -3,9 +3,16 @@ using UnityEngine.InputSystem;
 
 namespace HolyHelicopter
 {
-    /// <summary>Arcade thrust with world-space momentum and an independently stabilized gun sight.</summary>
+    public enum FlightControlMode { Direct, BoundedReticle }
+
+    /// <summary>Immediate steering, moderate world momentum, and a stabilized gun/pilot view.</summary>
     public sealed class FlightController : MonoBehaviour
     {
+        // Session only: scene restarts retain the comparison mode without writing player preferences.
+        static FlightControlMode sessionMode;
+        public FlightControlMode Mode { get; private set; }
+        public string ModeLabel => Mode == FlightControlMode.Direct ? "A / DIRECT STEERING" : "B / BOUNDED RETICLE";
+        public string ModeHint => Mode == FlightControlMode.Direct ? "F4  A / DIRECT STEERING   /   F5 TUNE" : "F4  B / BOUNDED RETICLE   /   F5 TUNE";
         public Camera Camera { get; private set; }
         public Vector3 Velocity { get; private set; }
         public Vector3 Acceleration { get; private set; }
@@ -16,52 +23,81 @@ namespace HolyHelicopter
         public float PlanarSpeed => new Vector2(Velocity.x, Velocity.z).magnitude;
         public float Altitude => transform.position.y - SafeGround(transform.position.x, transform.position.z);
         public float Heading => yaw;
-        public float TargetHeading => targetYaw;
-        public float LookPitch => pitch;
+        public float TargetHeading => yaw; // Compatibility for angular-command pilots; no queued intent.
+        public float LookPitch => -Mathf.Asin(Mathf.Clamp(AimForward.y, -1f, 1f)) * Mathf.Rad2Deg;
+        public float PilotPitch => pitch;
         public float Bank { get; private set; }
         public float VisualPitch { get; private set; }
-        public Vector3 AimOrigin => transform.position;
-        public Quaternion AimRotation => Quaternion.Euler(pitch, yaw, 0);
-        public Vector3 AimForward => AimRotation * Vector3.forward;
+        public Vector2 ReticleOffset => reticle;
+        public Vector2 ReticleHalfBounds => new Vector2(Mathf.Clamp(ReticleZone.x, .1f, .4f), Mathf.Clamp(ReticleZone.y, .1f, .4f)) * .5f;
+        public Vector3 AimOrigin => Camera ? Camera.transform.position : transform.position;
+        public Quaternion AimRotation => Quaternion.LookRotation(AimForward, Vector3.up);
+        public Vector3 AimForward
+        {
+            get
+            {
+                Vector3 local = Mode == FlightControlMode.BoundedReticle
+                    ? new Vector3(reticle.x * HorizontalProjection, reticle.y * VerticalProjection, 1f).normalized
+                    : Vector3.forward;
+                return Quaternion.Euler(pitch, yaw, 0) * local;
+            }
+        }
         public Vector3 AimRight => AimRotation * Vector3.right;
         public Vector3 AimUp => AimRotation * Vector3.up;
         public Vector3 LocalVelocity => Quaternion.Euler(0, -yaw, 0) * Velocity;
+        public float CockpitViewBank => Bank * CameraBankMotion * CameraMotion;
+        public float CockpitViewPitch => VisualPitch * CameraPitchMotion * CameraMotion;
 
-        [Header("Pilot comfort")]
-        public float Sensitivity = .085f;
+        [Header("Mouse / stabilized pilot optics")]
+        public float Sensitivity = .10f;
         public bool InvertY;
-        [Range(0f, 1f)] public float CameraMotion = .85f;
+        public float DirectYawResponse = 1f;
+        [Range(0f, 1f)] public float CameraMotion = .7f;
+        [Range(0f, .6f)] public float CameraBankMotion = .3f;
+        [Range(0f, 2f)] public float CameraPitchMotion = .8f;
         [Header("Cruise speeds (m/s)")]
         public float ForwardCruise = 23f;
         public float StrafeCruise = 18f;
-        public float ReverseCruise = 14f;
-        [Header("Thrust and airbrake")]
-        public float ThrustAcceleration = 8.8f;
-        public float ReleaseBraking = 13.5f;
-        public float ThrustJerk = 36f;
-        public float BrakeJerk = 45f;
-        [Header("Heading servo (degrees)")]
-        public float MaximumYawRate = 100f;
-        public float YawAcceleration = 240f;
+        public float ReverseCruise = 16f;
+        [Header("Velocity response (m/s squared; no input or jerk delay)")]
+        public float ThrustAcceleration = 28f;
+        public float ReleaseBraking = 46f;
+        public float ReversalAcceleration = 52f;
+        public float StrafeAcceleration = 34f;
+        [Header("Bounded steering (rate responds immediately)")]
+        public float MaximumYawRate = 160f;
+        [Range(0f, .4f)] public float SteeringDeadZone = .12f;
+        [Range(.5f, 2f)] public float SteeringExponent = 1.25f;
+        public Vector2 ReticleZone = new Vector2(.20f, .20f);
+        [Header("Physical presentation (does not steer the gun)")]
+        public float MaximumBank = 13f;
+        public float MaximumBodyPitch = 10f;
+        public float BodyResponse = 9f;
         [Header("Altitude hold")]
         public float MinimumClearance = 3.4f;
         public float MaximumAltitude = 58f;
         public float ClimbSpeed = 10f;
         public float DescendSpeed = 8f;
+        public float VerticalAcceleration = 32f;
 
-        float yaw = -22f, targetYaw = -22f, pitch = 19f, verticalSpeed, holdHeight;
-        float cameraRoll, cameraPitch;
-        Vector3 thrust, cameraOffset;
+        float yaw = -22f, pitch = 19f, verticalSpeed, holdHeight, previousClimb;
+        Vector2 reticle;
+        Vector3 cameraOffset;
+        Quaternion viewHandoff = Quaternion.identity;
+        bool discardMouse = true;
         Game game;
         Transform body, rotor;
         Light searchlight;
+        float VerticalProjection => 2f * Mathf.Tan(39f * Mathf.Deg2Rad);
+        float HorizontalProjection => VerticalProjection * (Camera ? Camera.aspect : 16f / 9f);
 
         public void Initialize(Game owner)
         {
             game = owner;
+            Mode = sessionMode;
             transform.position = World.BasePosition + Vector3.up * 9f;
             holdHeight = transform.position.y;
-            var view = new GameObject("Pilot view — independent aiming");
+            var view = new GameObject("Pilot view / stabilized gun optics");
             view.transform.SetParent(transform, false);
             Camera = view.AddComponent<Camera>();
             Camera.tag = "MainCamera";
@@ -70,7 +106,7 @@ namespace HolyHelicopter
             Camera.farClipPlane = 2600f;
             Camera.backgroundColor = new Color(.025f, .042f, .075f);
             Camera.clearFlags = CameraClearFlags.Skybox;
-            Camera.cullingMask = ~(1 << 8); // The physical helicopter casts a silhouette; pilot sees the HUD canopy.
+            Camera.cullingMask = ~(1 << 8);
             view.AddComponent<AudioListener>();
             var lamp = new GameObject("Wide holy searchlight");
             lamp.transform.SetParent(view.transform, false);
@@ -86,12 +122,36 @@ namespace HolyHelicopter
             ApplyView(0, true);
         }
 
+        public void ToggleMode() => SetMode(Mode == FlightControlMode.Direct ? FlightControlMode.BoundedReticle : FlightControlMode.Direct);
+
+        public void SetMode(FlightControlMode mode)
+        {
+            if (Mode == mode) return;
+            Quaternion oldView = Camera ? Camera.transform.rotation : Quaternion.Euler(pitch, yaw, 0);
+            Vector3 oldEye = AimOrigin;
+            Vector3 aim = AimForward;
+            // Trim to the existing gun bearing, retaining world velocity and the exact sight.
+            // The eye eases the small off-centre trim over ~0.2s; no queued steering.
+            yaw = Mathf.Repeat(Mathf.Atan2(aim.x, aim.z) * Mathf.Rad2Deg, 360f);
+            pitch = -Mathf.Asin(Mathf.Clamp(aim.y, -1f, 1f)) * Mathf.Rad2Deg;
+            reticle = Vector2.zero;
+            Mode = sessionMode = mode;
+            YawRate = 0;
+            viewHandoff = Quaternion.Inverse(Quaternion.Euler(pitch, yaw, 0)) * oldView;
+            transform.rotation = Quaternion.Euler(0, yaw, 0);
+            cameraOffset = transform.InverseTransformPoint(oldEye);
+            ApplyView(0, false);
+        }
+
+        // Ignore cursor-warp deltas on recapture. Park the reticle while chart/menus own the mouse.
+        public void SuspendInput() { discardMouse = true; YawRate = 0; }
+
         public void Tick(float dt, bool acceptInput)
         {
             var keys = Keyboard.current;
             var mouse = Mouse.current;
             Vector2 movement = Vector2.zero;
-            float climb = 0f, turn = 0f, look = 0f, scroll = 0f;
+            float climb = 0, turn = 0, look = 0, scroll = 0;
             if (acceptInput)
             {
                 if (keys != null)
@@ -100,7 +160,7 @@ namespace HolyHelicopter
                     movement.y = (keys.wKey.isPressed ? 1 : 0) - (keys.sKey.isPressed ? 1 : 0);
                     climb = (keys.eKey.isPressed ? 1 : 0) - (keys.qKey.isPressed ? 1 : 0);
                 }
-                if (mouse != null)
+                if (mouse != null && !discardMouse)
                 {
                     Vector2 delta = mouse.delta.ReadValue();
                     turn = delta.x * Sensitivity;
@@ -108,29 +168,68 @@ namespace HolyHelicopter
                     float wheel = mouse.scroll.ReadValue().y;
                     if (Mathf.Abs(wheel) > .01f) scroll = Mathf.Sign(wheel);
                 }
+                discardMouse = false;
             }
-            TickCommand(dt, movement, climb, turn, look, scroll);
+            else discardMouse = true;
+            TickInternal(dt, movement, climb, turn, look, scroll, acceptInput);
         }
 
         /// <summary>
-        /// The actual player input and automated pilot use this same path. Movement/climb are
-        /// normalized commands. Yaw/look inputs are angular DISPLACEMENTS in degrees this tick,
-        /// not rates; a continuous 60-degree/second turn supplies 60*dt. Positive look aims down.
-        /// Scroll is signed notch count. Heading intent is retained while the angular servo catches up.
+        /// Shared mouse/pilot path: normalized movement/climb, angular mouse displacement in degrees
+        /// (positive look down), signed altitude notches. In B these deltas move the bounded sight;
+        /// held displacement drives yaw RATE. Scripted heading pilots select A explicitly.
         /// </summary>
         public void TickCommand(float dt, Vector2 movement, float climb, float yawInput, float lookInput = 0f, float scroll = 0f)
+            => TickInternal(dt, movement, climb, yawInput, lookInput, scroll, true);
+
+        void TickInternal(float dt, Vector2 movement, float climb, float yawInput, float lookInput, float scroll, bool steer)
         {
             if (dt <= 0 || float.IsNaN(dt) || float.IsInfinity(dt)) return;
             RequestedMovement = Vector2.ClampMagnitude(movement, 1f);
             ClimbCommand = Mathf.Clamp(climb, -1f, 1f);
-            // Cap accumulated turn intent so a single pathological device event cannot queue spins.
-            targetYaw = yaw + Mathf.Clamp(Mathf.DeltaAngle(yaw, targetYaw + yawInput), -135f, 135f);
-            pitch = Mathf.Clamp(pitch + lookInput, -28f, 78f);
+            float yawDelta, startReticleAngle = 0;
+            if (Mode == FlightControlMode.Direct)
+            {
+                yawDelta = Mathf.Clamp(yawInput * DirectYawResponse, -180f, 180f);
+                pitch = Mathf.Clamp(pitch + lookInput, -28f, 78f);
+            }
+            else
+            {
+                Vector2 half = ReticleHalfBounds;
+                float xAngle = Mathf.Atan(reticle.x * HorizontalProjection) * Mathf.Rad2Deg;
+                startReticleAngle = xAngle;
+                reticle.x = Mathf.Tan(Mathf.Clamp(xAngle + yawInput, -60f, 60f) * Mathf.Deg2Rad) / HorizontalProjection;
+                reticle.x = Mathf.Clamp(reticle.x, -half.x, half.x);
+                float yAngle = Mathf.Atan(reticle.y * VerticalProjection) * Mathf.Rad2Deg - lookInput;
+                float limit = Mathf.Atan(half.y * VerticalProjection) * Mathf.Rad2Deg;
+                float bounded = Mathf.Clamp(yAngle, -limit, limit);
+                // Crossing a vertical edge looks through the lower/upper window immediately.
+                // Elevation never drives aircraft pitch or continues after the mouse stops.
+                pitch = Mathf.Clamp(pitch + bounded - yAngle, -28f + bounded, 78f + bounded);
+                reticle.y = Mathf.Tan(bounded * Mathf.Deg2Rad) / VerticalProjection;
+                yawDelta = 0; // Integrate the mouse displacement at the same 120Hz as movement below.
+            }
+            YawRate = yawDelta / dt;
             holdHeight += Mathf.Clamp(scroll, -8f, 8f) * 3.5f;
-            // Fixed maximum integration step keeps acceleration and clearance consistent at 30/60/120 Hz.
             int steps = Mathf.Max(1, Mathf.CeilToInt(dt * 120f));
             float step = dt / steps;
-            for (int i = 0; i < steps; i++) Integrate(step);
+            for (int i = 0; i < steps; i++)
+            {
+                float turn = yawDelta / steps;
+                if (Mode == FlightControlMode.BoundedReticle)
+                {
+                    // Distribute this frame's mouse sample across substeps. A continuous device motion
+                    // then turns the same amount at 30/60/120Hz, with no residual intent after the tick.
+                    float angle = Mathf.Clamp(startReticleAngle + yawInput * ((i + 1f) / steps), -60f, 60f);
+                    float x = Mathf.Clamp(Mathf.Tan(angle * Mathf.Deg2Rad) / HorizontalProjection / ReticleHalfBounds.x, -1, 1);
+                    float rate = Mathf.Pow(Mathf.Clamp01((Mathf.Abs(x) - SteeringDeadZone) / Mathf.Max(.01f, 1 - SteeringDeadZone)), SteeringExponent);
+                    YawRate = steer ? Mathf.Sign(x) * rate * MaximumYawRate : 0;
+                    turn = YawRate * step;
+                }
+                yaw = Mathf.Repeat(yaw + turn, 360f);
+                Integrate(step);
+            }
+            viewHandoff = Quaternion.Slerp(viewHandoff, Quaternion.identity, 1f - Mathf.Exp(-dt * 18f));
             ApplyView(dt, false);
             if (body) body.localRotation = Quaternion.Euler(VisualPitch, 0, Bank);
             if (rotor) rotor.Rotate(Vector3.up, dt * (1720f + EngineLoad * 190f), Space.Self);
@@ -138,14 +237,6 @@ namespace HolyHelicopter
 
         void Integrate(float dt)
         {
-            float headingError = Mathf.DeltaAngle(yaw, targetYaw);
-            float stoppingRate = Mathf.Sqrt(2f * YawAcceleration * Mathf.Abs(headingError));
-            float desiredYawRate = Mathf.Sign(headingError) * Mathf.Min(MaximumYawRate, Mathf.Min(stoppingRate, Mathf.Abs(headingError) * 5f));
-            YawRate = Mathf.MoveTowards(YawRate, desiredYawRate, YawAcceleration * dt);
-            yaw = Mathf.Repeat(yaw + YawRate * dt, 360f);
-            if (Mathf.Abs(headingError) < .005f && Mathf.Abs(YawRate) < YawAcceleration * dt)
-            { yaw = Mathf.Repeat(targetYaw, 360f); YawRate = 0; }
-
             Quaternion heading = Quaternion.Euler(0, yaw, 0);
             float fuelPower = game.Fuel > 0 ? 1f : .3f;
             Vector3 desired = heading * new Vector3(RequestedMovement.x * StrafeCruise, 0,
@@ -154,25 +245,21 @@ namespace HolyHelicopter
             Vector3 planar = new Vector3(Velocity.x, 0, Velocity.z);
             Vector3 previousVelocity = Velocity;
             bool braking = RequestedMovement.sqrMagnitude < .001f;
-            Vector3 velocityError = desired - planar;
-            Vector3 wantedThrust = Vector3.ClampMagnitude(velocityError / dt, braking ? ReleaseBraking : ThrustAcceleration * fuelPower);
-            thrust = Vector3.MoveTowards(thrust, wantedThrust, (braking ? BrakeJerk : ThrustJerk) * dt);
-            Vector3 changed = planar + thrust * dt;
-            if (Vector3.Dot(velocityError, desired - changed) <= 0)
-            {
-                // Stop at the commanded velocity instead of oscillating around a hover or cruise speed.
-                changed = desired;
-                thrust = Vector3.zero;
-            }
-            planar = changed;
+            bool reversing = Vector3.Dot(planar, desired) < -.01f;
+            float acceleration = braking ? ReleaseBraking : reversing ? ReversalAcceleration :
+                Mathf.Lerp(ThrustAcceleration, StrafeAcceleration, Mathf.Abs(RequestedMovement.x));
+            // Acceleration changes immediately. Momentum remains in velocity, never an input backlog.
+            planar = Vector3.MoveTowards(planar, desired, Mathf.Max(.1f, acceleration) * (braking ? 1f : fuelPower) * dt);
             Vector3 next = previousPosition + planar * dt;
             float boundary = World.Radius - 12f;
-            if (Mathf.Abs(next.x) > boundary) { next.x = Mathf.Clamp(next.x, -boundary, boundary); planar.x = thrust.x = 0; }
-            if (Mathf.Abs(next.z) > boundary) { next.z = Mathf.Clamp(next.z, -boundary, boundary); planar.z = thrust.z = 0; }
+            if (Mathf.Abs(next.x) > boundary) { next.x = Mathf.Clamp(next.x, -boundary, boundary); planar.x = 0; }
+            if (Mathf.Abs(next.z) > boundary) { next.z = Mathf.Clamp(next.z, -boundary, boundary); planar.z = 0; }
             float ground = SafeGround(next.x, next.z);
-            holdHeight += ClimbCommand * (ClimbCommand >= 0 ? ClimbSpeed : DescendSpeed) * dt;
+            // Altitude commands move/brake now; retain absolute hold for scroll and terrain safety.
+            if (Mathf.Abs(ClimbCommand) > .001f) holdHeight = next.y + ClimbCommand * (ClimbCommand >= 0 ? ClimbSpeed : DescendSpeed) / 3.5f;
+            else if (Mathf.Abs(previousClimb) > .001f) holdHeight = next.y;
+            previousClimb = ClimbCommand;
             holdHeight = Mathf.Clamp(holdHeight, ground + MinimumClearance, ground + MaximumAltitude);
-            // Raise the absolute height hold before a ridge arrives; never follow every contour down.
             float safeFloor = ground + MinimumClearance;
             for (int sample = 1; sample <= 4; sample++)
             {
@@ -182,51 +269,43 @@ namespace HolyHelicopter
             holdHeight = Mathf.Max(holdHeight, safeFloor);
             if (game.Fuel <= 0) holdHeight = Mathf.Max(ground + MinimumClearance, holdHeight - dt * 2f);
             float desiredVertical = Mathf.Clamp((holdHeight - next.y) * 3.5f, -DescendSpeed, ClimbSpeed + 4f);
-            verticalSpeed = Mathf.MoveTowards(verticalSpeed, desiredVertical, 14f * dt);
+            verticalSpeed = Mathf.MoveTowards(verticalSpeed, desiredVertical, VerticalAcceleration * dt);
             next.y += verticalSpeed * dt;
             if ((holdHeight - previousPosition.y) * (holdHeight - next.y) <= 0 && Mathf.Abs(ClimbCommand) < .001f)
             { next.y = holdHeight; verticalSpeed = 0; }
-            next.y = Mathf.Max(next.y, ground + MinimumClearance); // Safety takes precedence over visual inertia.
+            next.y = Mathf.Clamp(next.y, ground + MinimumClearance, ground + MaximumAltitude);
             transform.position = next;
-            // Keep horizontal momentum as simulation state. Reconstructing it from transform
-            // differences amplifies float rounding into false acceleration far from world origin.
             Velocity = new Vector3(planar.x, (next.y - previousPosition.y) / Mathf.Max(.0001f, dt), planar.z);
             Acceleration = (Velocity - previousVelocity) / Mathf.Max(.0001f, dt);
             Vector3 localAcceleration = Quaternion.Inverse(heading) * Acceleration;
             Vector3 localVelocity = Quaternion.Inverse(heading) * Velocity;
             float speedRatio = Mathf.Clamp01(PlanarSpeed / ForwardCruise);
-            float desiredPitch = Mathf.Clamp(localAcceleration.z * .62f + localVelocity.z / ForwardCruise * 3.2f, -10f, 11f);
-            float desiredBank = Mathf.Clamp(-localAcceleration.x * .75f - localVelocity.x / StrafeCruise * 3f - YawRate / MaximumYawRate * speedRatio * 5f, -14f, 14f);
-            float response = 1f - Mathf.Exp(-dt * 5f);
+            float desiredPitch = Mathf.Clamp(localAcceleration.z * .22f + localVelocity.z / ForwardCruise * 4f, -MaximumBodyPitch, MaximumBodyPitch);
+            float desiredBank = Mathf.Clamp(-localAcceleration.x * .25f - localVelocity.x / StrafeCruise * 6f -
+                Mathf.Clamp(YawRate / Mathf.Max(1, MaximumYawRate), -1, 1) * (3f + speedRatio * 4f), -MaximumBank, MaximumBank);
+            float response = 1f - Mathf.Exp(-dt * BodyResponse);
             VisualPitch = Mathf.Lerp(VisualPitch, desiredPitch, response);
             Bank = Mathf.Lerp(Bank, desiredBank, response);
             float load = .18f + RequestedMovement.magnitude * .35f + Mathf.Abs(ClimbCommand) * .25f +
-                         Mathf.Clamp01(new Vector2(Acceleration.x, Acceleration.z).magnitude / ThrustAcceleration) * .22f;
+                         Mathf.Clamp01(new Vector2(Acceleration.x, Acceleration.z).magnitude / Mathf.Max(1, ThrustAcceleration)) * .22f;
             EngineLoad = Mathf.Lerp(EngineLoad, Mathf.Clamp01(load), response);
         }
 
-        // Geometry is a triangulated approximation of the analytic hills. Clear both surfaces.
         static float SafeGround(float x, float z) => Mathf.Max(World.Height(x, z), World.SurfaceHeight(x, z));
 
         void ApplyView(float dt, bool snap)
         {
             transform.rotation = Quaternion.Euler(0, yaw, 0);
             if (!Camera) return;
-            float motion = Mathf.Clamp01(CameraMotion);
-            float response = snap ? 1f : 1f - Mathf.Exp(-dt * 7f);
+            float response = snap ? 1f : 1f - Mathf.Exp(-dt * 10f);
             Vector3 localAcceleration = Quaternion.Euler(0, -yaw, 0) * Acceleration;
-            Vector3 offset = new Vector3(-localAcceleration.x * .006f, -Acceleration.y * .004f, -localAcceleration.z * .006f);
-            offset = Vector3.ClampMagnitude(offset, .095f) * motion;
+            Vector3 offset = Vector3.ClampMagnitude(new Vector3(-localAcceleration.x, -Acceleration.y * .5f, -localAcceleration.z) * .001f, .035f) * CameraMotion;
             cameraOffset = Vector3.Lerp(cameraOffset, offset, response);
-            cameraPitch = Mathf.Lerp(cameraPitch, VisualPitch * .20f * motion, response);
-            cameraRoll = Mathf.Lerp(cameraRoll, Bank * .30f * motion, response);
-            if (motion <= 0) { cameraOffset = Vector3.zero; cameraPitch = cameraRoll = 0; }
+            if (CameraMotion <= 0) cameraOffset = Vector3.zero;
             Camera.transform.localPosition = cameraOffset;
-            Camera.transform.localRotation = Quaternion.Euler(pitch + cameraPitch, 0, cameraRoll);
-            float fov = 78f + Mathf.Clamp01(PlanarSpeed / ForwardCruise) * 3f * motion;
-            Camera.fieldOfView = Mathf.Lerp(Camera.fieldOfView, fov, snap ? 1f : 1f - Mathf.Exp(-dt * 3f));
-            if (motion <= 0) Camera.fieldOfView = 78f;
-            // The lamp and weapon solution share the stable sight, not the spring-mounted pilot eye.
+            // Body/canopy bank and pitch carry the machine's motion; the gun optics stay stabilized.
+            Camera.transform.localRotation = Quaternion.Euler(pitch, 0, 0) * viewHandoff;
+            Camera.fieldOfView = 78f;
             if (searchlight) { searchlight.transform.position = AimOrigin; searchlight.transform.rotation = AimRotation; }
             Vector3 p = AimOrigin;
             Shader.SetGlobalVector("_HolyLampPosition", new Vector4(p.x, p.y, p.z, 1));
@@ -237,12 +316,11 @@ namespace HolyHelicopter
         {
             transform.position = position;
             holdHeight = position.y;
-            Velocity = Vector3.zero;
-            Acceleration = thrust = cameraOffset = Vector3.zero;
+            Velocity = Acceleration = cameraOffset = Vector3.zero;
             RequestedMovement = Vector2.zero;
-            ClimbCommand = YawRate = cameraPitch = cameraRoll = Bank = VisualPitch = 0;
-            targetYaw = yaw;
-            verticalSpeed = 0;
+            ClimbCommand = YawRate = Bank = VisualPitch = previousClimb = verticalSpeed = 0;
+            reticle = Vector2.zero;
+            viewHandoff = Quaternion.identity;
             ApplyView(0, true);
         }
 
@@ -252,12 +330,14 @@ namespace HolyHelicopter
             Teleport(position);
         }
 
-        /// <summary>Initial/test pose only; ordinary turning must go through TickCommand.</summary>
+        /// <summary>Initial/test pose only; ordinary steering goes through TickCommand.</summary>
         public void SetAim(float heading, float lookPitch)
         {
-            yaw = targetYaw = Mathf.Repeat(heading, 360f);
+            yaw = Mathf.Repeat(heading, 360f);
             pitch = Mathf.Clamp(lookPitch, -28f, 78f);
             YawRate = 0;
+            reticle = Vector2.zero;
+            viewHandoff = Quaternion.identity;
             ApplyView(0, true);
         }
 

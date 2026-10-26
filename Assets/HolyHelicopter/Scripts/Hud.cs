@@ -30,6 +30,7 @@ namespace HolyHelicopter
         float radarNext, fps, smoothDelta;
         bool radarDirty = true;
         string tooltip;
+        public bool ShowFlightTuning;
         float uiScale;
         bool Compact => Screen.height <= 720;
         enum MarkerKind { Objective, Person, Crate }
@@ -128,13 +129,18 @@ namespace HolyHelicopter
         void DrawCockpit()
         {
             // Keep the centre and the downward firing arc completely open.
-            float bank = Mathf.Clamp(Vector3.Dot(game.Flight.Velocity, game.Flight.transform.right) * .12f, -3f, 3f);
+            Matrix4x4 instruments = GUI.matrix;
+            GUIUtility.RotateAroundPivot(game.Flight.CockpitViewBank, new Vector2(800, 450));
+            GUI.matrix *= Matrix4x4.Translate(new Vector3(0, game.Flight.CockpitViewPitch * 3f, 0));
+            float bank = game.Flight.Bank * .35f;
             Line(new Vector2(-15, 45), new Vector2(95 + bank, 711), 34, Ink);
             Line(new Vector2(1615, 45), new Vector2(1505 + bank, 711), 34, Ink);
             Line(new Vector2(-3, 45), new Vector2(108 + bank, 711), 3, Edge);
             Line(new Vector2(1603, 45), new Vector2(1492 + bank, 711), 3, Edge);
             Line(new Vector2(0, 720), new Vector2(190, 797), 23, Ink);
             Line(new Vector2(1600, 720), new Vector2(1410, 797), 23, Ink);
+            Screw(105, 712); Screw(1495, 712);
+            GUI.matrix = instruments;
             Fill(new Rect(0, 891, Width, 9), Ink);
             Box(new Rect(371, 780, 856, 120), Ink, Edge);
             Fill(new Rect(371, 780, 856, 4), new Color(.31f, .35f, .27f));
@@ -143,7 +149,7 @@ namespace HolyHelicopter
                 Line(new Vector2(392 + i * 14, 789), new Vector2(385 + i * 14, 801), 3, new Color(.59f, .48f, .16f));
                 Line(new Vector2(1151 + i * 14, 789), new Vector2(1144 + i * 14, 801), 3, new Color(.59f, .48f, .16f));
             }
-            Screw(381, 887); Screw(1218, 887); Screw(105, 712); Screw(1495, 712);
+            Screw(381, 887); Screw(1218, 887);
             Text(new Rect(381, 816, 97, 26), "SALVAGE", 15, Muted, TextAnchor.MiddleCenter);
             Text(new Rect(379, 845, 101, 37), game.Salvage.ToString("N0"), 25, Gold, TextAnchor.MiddleCenter);
             Text(new Rect(1122, 816, 94, 26), "TAB", 24, Gold, TextAnchor.MiddleCenter);
@@ -186,6 +192,7 @@ namespace HolyHelicopter
             string arrow = Mathf.Abs(deltaBase) < 14 ? "•" : deltaBase < 0 ? "<" : ">";
             Text(new Rect(620, 93, 360, 20), $"{arrow}  SANCTUARY  {new Vector2(toBase.x, toBase.z).magnitude:0} m  {arrow}", 12, Gold, TextAnchor.MiddleCenter);
             DrawNavigation(heading);
+            Text(new Rect(475, 2, 650, 22), game.Flight.ModeHint, 15, Cyan, TextAnchor.MiddleCenter);
         }
 
         void DrawCombat()
@@ -200,6 +207,26 @@ namespace HolyHelicopter
             Text(new Rect(1228, 190, 330, 25), $"NEXT ARMY  {ClockText(game.Horde.NextAssaultIn)}", 16, Muted, TextAnchor.MiddleRight);
             bool hit = Time.time < game.HitUntil;
             Color reticle = game.Arsenal.FriendlyFireRisk ? Hazard : hit ? Gold : new Color(.82f, .95f, .85f, .87f);
+            if (game.Flight.Mode == FlightControlMode.BoundedReticle)
+            {
+                Vector2 half = game.Flight.ReticleHalfBounds;
+                float left = ( .5f - half.x) * Width, top = (.5f - half.y) * Height;
+                float right = (.5f + half.x) * Width, bottom = (.5f + half.y) * Height;
+                Color guide = new Color(.3f, .7f, .76f, .35f);
+                // Corner marks leave the target unobscured. The centre stripe shows the yaw dead zone.
+                Line(new Vector2(left, top + 12), new Vector2(left, top), 1, guide);
+                Line(new Vector2(left, top), new Vector2(left + 12, top), 1, guide);
+                Line(new Vector2(right - 12, top), new Vector2(right, top), 1, guide);
+                Line(new Vector2(right, top), new Vector2(right, top + 12), 1, guide);
+                Line(new Vector2(left, bottom - 12), new Vector2(left, bottom), 1, guide);
+                Line(new Vector2(left, bottom), new Vector2(left + 12, bottom), 1, guide);
+                Line(new Vector2(right - 12, bottom), new Vector2(right, bottom), 1, guide);
+                Line(new Vector2(right, bottom), new Vector2(right, bottom - 12), 1, guide);
+                float dead = half.x * Width * game.Flight.SteeringDeadZone;
+                Line(new Vector2(800 - dead, 446), new Vector2(800 - dead, 454), 1, guide);
+                Line(new Vector2(800 + dead, 446), new Vector2(800 + dead, 454), 1, guide);
+                Fill(new Rect(798, 449, 4, 2), guide);
+            }
             Vector3 aimScreen = game.Flight.Camera.WorldToViewportPoint(game.Arsenal.AimPoint);
             Matrix4x4 reticleMatrix = GUI.matrix;
             GUI.matrix = GUI.matrix * Matrix4x4.Translate(new Vector3((aimScreen.x - .5f) * Width, (.5f - aimScreen.y) * Height, 0));
@@ -217,8 +244,9 @@ namespace HolyHelicopter
             DrawAirThreats();
             if (game.Combo >= 4)
             {
-                Text(new Rect(650, 494, 300, 38), $"{game.Combo:N0}  SOUL STREAK", 23, Gold, TextAnchor.MiddleCenter);
-                if (game.Combo >= 50) Text(new Rect(650, 531, 300, 22), game.Combo >= 200 ? "DIVINE INTERVENTION" : "MASS EXORCISM", 12, Ivory, TextAnchor.MiddleCenter);
+                bool bounded = game.Flight.Mode == FlightControlMode.BoundedReticle;
+                Text(bounded ? new Rect(1228, 224, 330, 30) : new Rect(650, 494, 300, 38), $"{game.Combo:N0}  SOUL STREAK", bounded ? 20 : 23, Gold, bounded ? TextAnchor.MiddleRight : TextAnchor.MiddleCenter);
+                if (!bounded && game.Combo >= 50) Text(new Rect(650, 531, 300, 22), game.Combo >= 200 ? "DIVINE INTERVENTION" : "MASS EXORCISM", 12, Ivory, TextAnchor.MiddleCenter);
             }
             if (game.Horde.Boarders > 0)
                 Alert($"{game.Horde.Boarders} BOARDERS  //  STRAFE HARD & CLIMB", Red, 595);
@@ -545,7 +573,7 @@ namespace HolyHelicopter
         {
             Box(new Rect(320, 160, 960, 569), new Color(Ink.r, Ink.g, Ink.b, 1), Edge);
             Text(new Rect(351, 181, 896, 36), "MERCY-ONE / FIELD MANUAL", 28, Gold);
-            HelpRow(239, "FLIGHT", "WASD moves. Mouse turns and aims. Q/E or scroll changes altitude.");
+            HelpRow(239, "FLIGHT", "WASD moves. Q/E or wheel: altitude. F4: direct / bounded sight. F5: tune.");
             HelpRow(309, "WEAPONS", "Hold LMB / RMB. TAB frees the cursor. Left / right click icons to assign.");
             HelpRow(379, "HOOK", "Below 46 ft: fly over crates. Slow near cyan people to rescue. Four seats.");
             HelpRow(449, "DANGER", "Strafe or climb to dodge hexes and shake boarders. Keep moving over swarms.");
@@ -580,7 +608,7 @@ namespace HolyHelicopter
             Fill(new Rect(1014, 546, 442, 1), Edge);
             Text(new Rect(1014, 565, 442, 29), "WASD MOVE / MOUSE AIM / LMB-RMB FIRE", 18, Ivory);
             Text(new Rect(1014, 604, 442, 29), "Q-E OR SCROLL / ALTITUDE", 18, Ivory);
-            Text(new Rect(1014, 643, 442, 29), "TAB / ASSIGN & ARMORY   H / HELP", 18, Ivory);
+            Text(new Rect(1014, 643, 442, 29), "F4 / FLIGHT MODE   F5 / TUNE   H / HELP", 18, Ivory);
             Text(new Rect(1014, 692, 442, 61), "Hook below 46 ft. Slow down for people.\nKeep moving when skeletons pile up.", 20, Muted, TextAnchor.UpperLeft, true);
             Text(new Rect(111, 824, 1376, 29), Compact ? "SANCTUARY AVIATION DIVISION / EST. 1666" : "SANCTUARY AVIATION DIVISION / EST. 1666     •     ARCADE FLIGHT / THOUSANDS OF MONSTERS / ABSOLUTELY NO SUBTLETY", 16, Muted);
         }
@@ -597,9 +625,9 @@ namespace HolyHelicopter
             Fill(new Rect(0, 0, 1600, 900), new Color(.01f, .02f, .03f, .76f));
             Box(new Rect(520, 170, 560, 560), Ink, Edge);
             Text(new Rect(554, 203, 492, 48), "A MOMENT OF SILENCE", 31, Gold, TextAnchor.MiddleCenter);
-            Text(new Rect(554, 260, 492, 30), "FLIGHT PAUSED", 13, Muted, TextAnchor.MiddleCenter);
+            if (Button(new Rect(554, 260, 492, 35), "F4  " + game.Flight.ModeLabel, Cyan, 16)) game.Flight.ToggleMode();
             Text(new Rect(582, 320, 330, 24), "MOUSE SENSITIVITY", 13, Ivory);
-            Text(new Rect(930, 320, 88, 24), $"{game.Flight.Sensitivity / .085f:0.00}×", 13, Gold, TextAnchor.MiddleRight);
+            Text(new Rect(930, 320, 88, 24), $"{game.Flight.Sensitivity / .10f:0.00}×", 13, Gold, TextAnchor.MiddleRight);
             game.Flight.Sensitivity = Slider(new Rect(582, 351, 436, 26), game.Flight.Sensitivity, .025f, .2f);
             if (Button(new Rect(582, 405, 210, 43), "INVERT Y  /  " + (game.Flight.InvertY ? "ON" : "OFF"), game.Flight.InvertY ? Gold : Muted, 12))
                 game.Flight.InvertY = !game.Flight.InvertY;
@@ -609,7 +637,36 @@ namespace HolyHelicopter
             game.Flight.CameraMotion = Slider(new Rect(582, 494, 436, 24), game.Flight.CameraMotion, 0, 1);
             if (Button(new Rect(582, 535, 436, 50), "RESUME THE SERMON", Gold, 19)) game.TogglePause();
             if (Button(new Rect(582, 601, 436, 40), "RESTART OPERATION", Muted, 14)) game.Restart();
-            Text(new Rect(554, 662, 492, 48), "ESC RESUMES / H OPENS MANUAL\nM MUTES AUDIO", 17, Muted, TextAnchor.MiddleCenter, true);
+            if (Button(new Rect(554, 662, 492, 38), "F5 / FLIGHT TUNING  " + (ShowFlightTuning ? "CLOSE" : "OPEN"), Muted, 17)) ShowFlightTuning = !ShowFlightTuning;
+            if (ShowFlightTuning) DrawFlightTuning();
+        }
+
+        void DrawFlightTuning()
+        {
+            Box(new Rect(28, 105, 466, 666), Ink, Cyan);
+            Text(new Rect(49, 122, 424, 30), "FLIGHT LAB / LIVE SESSION VALUES", 21, Cyan);
+            var f = game.Flight;
+            f.ThrustAcceleration = TuneRow(164, "ACCELERATION", f.ThrustAcceleration, 16, 48);
+            f.ReleaseBraking = TuneRow(204, "BRAKING", f.ReleaseBraking, 24, 80);
+            f.ReversalAcceleration = TuneRow(244, "REVERSAL", f.ReversalAcceleration, 28, 80);
+            f.StrafeAcceleration = TuneRow(284, "STRAFE RESPONSE", f.StrafeAcceleration, 20, 60);
+            f.DirectYawResponse = TuneRow(324, "A / YAW RESPONSE", f.DirectYawResponse, .5f, 1.5f);
+            f.MaximumYawRate = TuneRow(364, "B / MAX YAW DEG/S", f.MaximumYawRate, 60, 240);
+            f.ReticleZone.x = TuneRow(404, "B / ZONE WIDTH", f.ReticleZone.x, .1f, .4f);
+            f.ReticleZone.y = TuneRow(444, "B / ZONE HEIGHT", f.ReticleZone.y, .1f, .4f);
+            f.SteeringDeadZone = TuneRow(484, "B / DEAD ZONE", f.SteeringDeadZone, .02f, .3f);
+            f.MaximumBank = TuneRow(524, "BODY BANK DEG", f.MaximumBank, 4, 20);
+            f.MaximumBodyPitch = TuneRow(564, "BODY PITCH DEG", f.MaximumBodyPitch, 3, 16);
+            f.CameraBankMotion = TuneRow(604, "VIEW BANK", f.CameraBankMotion, 0, .6f);
+            f.CameraPitchMotion = TuneRow(644, "VIEW PITCH", f.CameraPitchMotion, 0, 2);
+            Text(new Rect(49, 710, 424, 40), "ESC resumes. F4 compares.\nValues last until restart; mode lasts this session.", 15, Muted, TextAnchor.MiddleLeft, true);
+        }
+
+        float TuneRow(float y, string name, float value, float min, float max)
+        {
+            Text(new Rect(49, y, 300, 19), name, 13, Ivory);
+            Text(new Rect(355, y, 117, 19), value.ToString("0.00"), 13, Gold, TextAnchor.MiddleRight);
+            return Slider(new Rect(49, y + 20, 424, 16), value, min, max);
         }
 
         float Slider(Rect rect, float value, float min, float max)

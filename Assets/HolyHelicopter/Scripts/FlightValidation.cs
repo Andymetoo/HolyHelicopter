@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using UnityEngine;
 
 namespace HolyHelicopter
@@ -16,24 +17,38 @@ namespace HolyHelicopter
             Vector3 originalPosition = flight.transform.position;
             float originalHeading = flight.Heading, originalPitch = flight.LookPitch;
             float originalFuel = game.Fuel, originalMotion = flight.CameraMotion;
+            FlightControlMode originalMode = flight.Mode;
             game.Fuel = 100;
             try
             {
-                Check("Flight: thrust reaches cruise progressively", report, () => CheckAcceleration(flight));
-                Check("Flight: released controls brake over distance", report, () => CheckBraking(flight));
-                Check("Flight: reverse thrust preserves inertia", report, () => CheckReversal(flight));
-                Check("Flight: lateral and diagonal cruise limits", report, () => CheckStrafe(flight));
-                Check("Flight: bounded yaw preserves mouse intent", report, () => CheckYaw(flight));
-                Check("Flight: turning preserves world momentum", report, () => CheckTurningMomentum(flight));
-                Check("Flight: terrain clearance under real commands", report, () => CheckTerrain(flight));
-                Check("Flight: altitude hold, climb and scroll", report, () => CheckAltitude(flight));
-                Check("Flight: presentation does not move weapon aim", report, () => CheckStableAim(flight));
-                Check("Flight: command path is stable across frame rates", report, () => CheckFrameRates(flight));
+                for (int mode = 0; mode < 2; mode++)
+                {
+                    flight.SetMode((FlightControlMode)mode);
+                    string label = "Flight " + flight.ModeLabel + ": ";
+                    Check(label + "quick progressive acceleration", report, () => CheckAcceleration(flight));
+                    Check(label + "short braking and stable hover", report, () => CheckBraking(flight));
+                    Check(label + "responsive reversal", report, () => CheckReversal(flight));
+                    Check(label + "strafe and diagonal cruise", report, () => CheckStrafe(flight));
+                    Check(label + "immediate yaw", report, () => mode == 0 ? CheckYaw(flight) : CheckBoundedYaw(flight));
+                    Check(label + "terrain clearance", report, () => CheckTerrain(flight));
+                    Check(label + "altitude hold, climb and scroll", report, () => CheckAltitude(flight));
+                    Check(label + "stable sight during banking", report, () => CheckStableAim(flight));
+                    Check(label + "frame rate independence", report, () => CheckFrameRates(flight));
+                    Check(label + "ground aim and actual weapon impact", report, () => CheckWeaponAim(game));
+                    Check(label + "circle a stationary target", report, () => CheckOrbit(flight));
+                    Check(label + "low supply approach and stop", report, () => CheckSupplyApproach(game));
+                    Check(label + "no managed allocation in flight tick", report, () => CheckAllocations(flight));
+                }
+                flight.SetMode(FlightControlMode.Direct);
+                Check("Flight A: turn retains moderate world momentum", report, () => CheckTurningMomentum(flight));
+                Check("Flight: mode handoff preserves camera, sight and velocity", report, () => CheckModeSwitch(flight));
+                Check("Flight B: chart/menu mouse ownership", report, () => CheckInputOwnership(game));
             }
             finally
             {
                 flight.CameraMotion = originalMotion;
                 game.Fuel = originalFuel;
+                flight.SetMode(originalMode);
                 flight.Teleport(originalPosition, originalHeading, originalPitch);
             }
         }
@@ -72,8 +87,8 @@ namespace HolyHelicopter
                 if (time95 < 0 && flight.PlanarSpeed >= flight.ForwardCruise * .95f) time95 = t;
                 if (time99 < 0 && flight.PlanarSpeed >= flight.ForwardCruise * .99f) time99 = t;
             }
-            Require(speedAtOne > 4 && speedAtOne < 11, $"Unexpected one-second speed: {speedAtOne:F2}m/s.");
-            Require(time95 >= 2.35f && time99 <= 3.10f && time99 > 0, $"Cruise onset out of range: 95%={time95:F3}s, 99%={time99:F3}s.");
+            Require(speedAtOne > flight.ForwardCruise * .9f, $"Unexpected one-second speed: {speedAtOne:F2}m/s.");
+            Require(time95 >= .5f && time99 <= 1.2f && time99 > 0, $"Cruise onset out of range: 95%={time95:F3}s, 99%={time99:F3}s.");
             Require(Mathf.Abs(flight.PlanarSpeed - flight.ForwardCruise) < .08f, "Forward cruise speed did not settle.");
             Require(maximumAcceleration <= flight.ThrustAcceleration + .75f, $"Planar acceleration exceeded thrust bound: {maximumAcceleration:F2}.");
             return $"1s speed {speedAtOne:F2}m/s; 95% in {time95:F2}s; 99% in {time99:F2}s; cruise {flight.PlanarSpeed:F2}m/s; peak acceleration {maximumAcceleration:F2}m/s².";
@@ -93,8 +108,8 @@ namespace HolyHelicopter
             float distance = Horizontal(flight.transform.position - start).magnitude;
             Vector3 hover = flight.transform.position;
             Advance(flight, 3, Vector2.zero);
-            Require(stopTime > 1.6f && stopTime < 2.15f, $"Release braking took {stopTime:F3}s.");
-            Require(speedAtHalf > 14 && distance > 17 && distance < 29, $"Braking lacks expected inertia: {speedAtHalf:F2}m/s at 0.5s, {distance:F2}m stop distance.");
+            Require(stopTime > .25f && stopTime < .7f, $"Release braking took {stopTime:F3}s.");
+            Require(speedAtHalf < 2 && distance > 3 && distance < 8, $"Unexpected braking: {speedAtHalf:F2}m/s at 0.5s, {distance:F2}m stop distance.");
             Require(Horizontal(flight.transform.position - hover).magnitude < .005f, "Helicopter drifted horizontally after braking.");
             return $"Stop {stopTime:F2}s / {distance:F2}m; 0.5s speed {speedAtHalf:F2}m/s; stationary hover holds.";
         }
@@ -109,10 +124,10 @@ namespace HolyHelicopter
                 if (i == 29) halfSecond = flight.Velocity.z;
                 if (crossing < 0 && flight.Velocity.z <= 0) crossing = (i + 1) * Dt;
             }
-            Require(halfSecond > 15, $"Reverse input cancelled existing velocity too quickly ({halfSecond:F2}m/s after 0.5s).");
-            Require(crossing >= 2.2f && crossing <= 3.2f, $"Reversal zero crossing {crossing:F2}s outside expected range.");
+            Require(halfSecond < 0, $"Reverse input has not reversed velocity after 0.5s ({halfSecond:F2}m/s).");
+            Require(crossing >= .2f && crossing <= .6f, $"Reversal zero crossing {crossing:F2}s outside expected range.");
             Require(Mathf.Abs(flight.Velocity.z + flight.ReverseCruise) < .1f, "Reverse cruise did not settle at its lower speed.");
-            return $"Still forward {halfSecond:F2}m/s at 0.5s; crosses zero {crossing:F2}s; reverse cruise {-flight.Velocity.z:F2}m/s.";
+            return $"Signed forward velocity {halfSecond:F2}m/s at 0.5s; crosses zero {crossing:F2}s; reverse cruise {-flight.Velocity.z:F2}m/s.";
         }
 
         static string CheckStrafe(FlightController flight)
@@ -132,34 +147,27 @@ namespace HolyHelicopter
         static string CheckYaw(FlightController flight)
         {
             Reset(flight);
-            float maxRate = 0, maxAngularAcceleration = 0;
             flight.TickCommand(Dt, Vector2.zero, 0, 90);
             float firstFrame = Mathf.Abs(Mathf.DeltaAngle(0, flight.Heading));
-            float priorRate = flight.YawRate;
-            for (int i = 0; i < 210; i++)
-            {
-                flight.TickCommand(Dt, Vector2.zero, 0, 0);
-                maxRate = Mathf.Max(maxRate, Mathf.Abs(flight.YawRate));
-                maxAngularAcceleration = Mathf.Max(maxAngularAcceleration, Mathf.Abs(flight.YawRate - priorRate) / Dt);
-                priorRate = flight.YawRate;
-            }
-            Require(firstFrame < 1f, $"Heading snapped {firstFrame:F2}° on a single mouse-intent sample.");
-            Require(Mathf.Abs(Mathf.DeltaAngle(flight.Heading, 90)) < .05f, "Queued mouse intent was lost before reaching 90°.");
-            Require(maxRate <= flight.MaximumYawRate + .02f && maxAngularAcceleration <= flight.YawAcceleration + .1f,
-                $"Angular bounds exceeded: {maxRate:F2}°/s, {maxAngularAcceleration:F2}°/s².");
+            Require(Mathf.Abs(firstFrame - 90) < .02f, "Mouse displacement did not steer in the same frame.");
+            Advance(flight, .5f, Vector2.zero);
+            Require(Mathf.Abs(Mathf.DeltaAngle(flight.Heading, 90)) < .02f && flight.YawRate == 0, "Heading continued after mouse input stopped.");
+            flight.TickCommand(Dt, Vector2.zero, 0, 180);
+            Require(Mathf.Abs(Mathf.DeltaAngle(flight.Heading, 270)) < .03f, "Fast 180-degree turn lost input.");
             Require(Horizontal(flight.Velocity).magnitude < .01f, "Hover yaw translated the aircraft.");
-            return $"Single 90° intent reaches {flight.Heading:F3}°; first frame {firstFrame:F3}°; peak {maxRate:F1}°/s, {maxAngularAcceleration:F1}°/s².";
+            return $"90-degree and 180-degree samples applied in their input frame; no residual turning. First frame {firstFrame:F3} degrees.";
         }
 
         static string CheckTurningMomentum(FlightController flight)
         {
             Reset(flight); Advance(flight, 4, Vector2.up);
             flight.TickCommand(Dt, Vector2.up, 0, 90);
+            float initialMomentum = flight.Velocity.z;
+            Require(initialMomentum > 22 && flight.Velocity.x < 1, "Steering rotated world velocity instantly.");
             Advance(flight, .5f - Dt, Vector2.up);
             float heading = Mathf.Abs(Mathf.DeltaAngle(0, flight.Heading));
             float velocityHeading = Mathf.Abs(Mathf.Atan2(flight.Velocity.x, flight.Velocity.z) * Mathf.Rad2Deg);
-            Require(heading > 20 && velocityHeading < heading * .55f, $"Velocity followed the nose instantly: heading {heading:F2}°, momentum {velocityHeading:F2}°.");
-            Require(flight.Velocity.z > 19, "Turn discarded existing forward world velocity.");
+            Require(heading > 89 && velocityHeading > 20 && velocityHeading < 75, $"Unexpected turn follow-through: heading {heading:F2}°, momentum {velocityHeading:F2}°.");
             return $"After 0.5s turn: nose {heading:F1}°, momentum {velocityHeading:F1}°, original-axis speed {flight.Velocity.z:F2}m/s.";
         }
 
@@ -198,6 +206,15 @@ namespace HolyHelicopter
             Vector3 origin = flight.transform.position;
             Advance(flight, 4, Vector2.zero);
             Require(Vector3.Distance(origin, flight.transform.position) < .01f, "Stationary hover bobs without altitude input.");
+            flight.TickCommand(Dt, Vector2.zero, 1, 0);
+            Require(flight.Velocity.y > .1f, "Climb did not start in its command frame.");
+            Advance(flight, .5f, Vector2.zero, 1);
+            Advance(flight, .5f, Vector2.zero, -1);
+            Require(flight.Velocity.y < -5.5f, $"Rapid altitude reversal retained a climb backlog: {flight.Velocity.y:F3}m/s.");
+            Advance(flight, .2f, Vector2.zero);
+            Require(Mathf.Abs(flight.Velocity.y) < .1f, "Released collective did not hold altitude promptly.");
+            Reset(flight);
+            origin = flight.transform.position;
             flight.TickCommand(Dt, Vector2.zero, 0, 0, 0, 1);
             Advance(flight, 3, Vector2.zero);
             float scrollRise = flight.transform.position.y - origin.y;
@@ -219,9 +236,9 @@ namespace HolyHelicopter
             Advance(flight, 1.2f, new Vector2(1, .3f), .5f);
             float sightDrift = Vector3.Angle(sight, flight.AimForward);
             float eyeAngle = Quaternion.Angle(flight.AimRotation, flight.Camera.transform.rotation);
-            float eyeOffset = Vector3.Distance(flight.AimOrigin, flight.Camera.transform.position);
+            float eyeOffset = Vector3.Distance(flight.transform.position, flight.Camera.transform.position);
             Require(sightDrift < .01f, "Thrust/collective presentation altered the weapon sight.");
-            Require(eyeAngle > .15f && eyeAngle < 5.2f && eyeOffset <= .10f, $"Camera motion outside restrained bounds: {eyeAngle:F3}°, {eyeOffset:F3}m.");
+            Require(Mathf.Abs(flight.Bank) > 1 && eyeAngle < .05f && eyeOffset <= .036f, $"Optics or physical banking outside bounds: {eyeAngle:F3}°, {eyeOffset:F3}m.");
             flight.CameraMotion = 0;
             flight.TickCommand(Dt, Vector2.right, 0, 0);
             Require(Quaternion.Angle(flight.AimRotation, flight.Camera.transform.rotation) < .01f &&
@@ -255,6 +272,211 @@ namespace HolyHelicopter
             }
             Require(largestDistance < 1f && largestAngle < 1f, $"Frame-rate drift too large: {largestDistance:F3}m / {largestAngle:F3}°.");
             return $"Seven-second accel/turn/brake route at 30/60/120Hz differs by at most {largestDistance:F3}m / {largestAngle:F3}°.";
+        }
+
+        static string CheckBoundedYaw(FlightController flight)
+        {
+            Reset(flight);
+            flight.TickCommand(Dt, Vector2.zero, 0, 1000);
+            Require(Mathf.Abs(flight.YawRate - flight.MaximumYawRate) < .02f, "Full reticle deflection did not reach maximum yaw in its input frame.");
+            float start = flight.Heading;
+            Advance(flight, .5f, Vector2.zero);
+            Require(Mathf.Abs(Mathf.DeltaAngle(start, flight.Heading) - flight.MaximumYawRate * .5f) < .03f, "Held reticle produced unpredictable yaw.");
+            float projection = 2f * Mathf.Tan(39f * Mathf.Deg2Rad) * flight.Camera.aspect;
+            float recenter = -Mathf.Atan(flight.ReticleOffset.x * projection) * Mathf.Rad2Deg;
+            float before = flight.Heading;
+            flight.TickCommand(Dt, Vector2.zero, 0, recenter);
+            Require(Mathf.Abs(flight.YawRate) < .001f, "Recentering retained yaw/backlog.");
+            before = flight.Heading;
+            Advance(flight, .1f, Vector2.zero);
+            Require(Mathf.Abs(Mathf.DeltaAngle(before, flight.Heading)) < .001f, "Heading continued after the recentering tick.");
+            flight.TickCommand(Dt, Vector2.zero, 0, -1000, 200);
+            Require(flight.YawRate < -flight.MaximumYawRate + .02f, "Opposite reticle deflection did not reverse steering immediately.");
+            Require(flight.LookPitch > 65 && flight.LookPitch < 79, "Lower window cannot aim steeply down.");
+            Vector2 half = flight.ReticleHalfBounds;
+            Vector3 viewport = flight.Camera.WorldToViewportPoint(flight.AimOrigin + flight.AimForward * 80f);
+            Require(Mathf.Abs(viewport.x - .5f) <= half.x + .001f && Mathf.Abs(viewport.y - .5f) <= half.y + .001f, "Sight escaped its viewport box.");
+            float pitchBefore = flight.LookPitch;
+            Advance(flight, .2f, Vector2.zero);
+            Require(Mathf.Abs(flight.LookPitch - pitchBefore) < .02f, "Vertical view continued after mouse stopped.");
+            return $"Full rate {flight.MaximumYawRate:F0} deg/s starts, stops and reverses in one tick; 90/180 deg in {90f / flight.MaximumYawRate:F3}/{180f / flight.MaximumYawRate:F3}s. Downward elevation {pitchBefore:F1} deg; sight stays inside zone.";
+        }
+
+        static string CheckModeSwitch(FlightController flight)
+        {
+            flight.SetMode(FlightControlMode.BoundedReticle);
+            Reset(flight);
+            flight.TickCommand(Dt, Vector2.right, .5f, 8, 7);
+            Vector3 aim = flight.AimForward, velocity = flight.Velocity, origin = flight.AimOrigin;
+            Quaternion camera = flight.Camera.transform.rotation;
+            for (int i = 0; i < 8; i++)
+            {
+                flight.ToggleMode();
+                Require(Vector3.Dot(aim, flight.AimForward) > .999999f, "Mode switch moved weapon direction.");
+                Require(Quaternion.Angle(camera, flight.Camera.transform.rotation) < .06f, "Mode switch jumped the camera.");
+                Require(Vector3.Distance(origin, flight.AimOrigin) < .001f, "Mode switch jumped ray origin.");
+                Require(Vector3.Distance(velocity, flight.Velocity) < .001f, "Mode switch reset world velocity.");
+            }
+            flight.SetMode(FlightControlMode.Direct);
+            Advance(flight, .5f, Vector2.zero);
+            Require(Vector3.Dot(aim, flight.AimForward) > .999999f, "Eye recentering disturbed aim.");
+            return "Repeated switches preserve the exact weapon ray, camera pose and world velocity; eye trim settles without moving aim.";
+        }
+
+        static string CheckInputOwnership(Game game)
+        {
+            var flight = game.Flight;
+            bool cursor = game.CursorFree, chart = game.Hud.ShowChart;
+            bool paused = game.Paused, tuning = game.Hud.ShowFlightTuning;
+            flight.SetMode(FlightControlMode.BoundedReticle);
+            Reset(flight);
+            flight.TickCommand(Dt, Vector2.up, 0, 20);
+            float heading = flight.Heading;
+            Vector2 sight = flight.ReticleOffset;
+            try
+            {
+                game.Hud.ShowChart = true;
+                game.SetCursor(true);
+                for (int i = 0; i < 60; i++) flight.Tick(Dt, false);
+                Require(Mathf.Abs(Mathf.DeltaAngle(heading, flight.Heading)) < .001f, "Bounded steering continued while the chart owned the mouse.");
+                Require(Vector2.Distance(sight, flight.ReticleOffset) < .001f, "Chart interaction displaced the gun sight.");
+                Require(flight.PlanarSpeed < .1f, "Opening UI failed to brake movement.");
+                game.Paused = false;
+                game.Hud.ShowFlightTuning = false;
+                game.ToggleFlightTuning();
+                Require(game.Paused && game.Hud.ShowFlightTuning, "F5 did not open paused flight tuning.");
+                game.TogglePause();
+                game.ToggleFlightTuning();
+                Require(game.Paused && game.Hud.ShowFlightTuning, "F5 failed to reopen tuning after resuming.");
+            }
+            finally
+            {
+                game.Paused = paused; game.Hud.ShowFlightTuning = tuning;
+                game.Hud.ShowChart = chart; game.SetCursor(cursor);
+            }
+            return "Chart/cursor ownership parks steering and sight and brakes the aircraft. F5 reopens tuning after resume. Recapture discards cursor-warp deltas.";
+        }
+
+        static string CheckWeaponAim(Game game)
+        {
+            var flight = game.Flight;
+            flight.Teleport(World.Ground(-500, -700) + Vector3.up * 42, 0, 30);
+            flight.TickCommand(Dt, Vector2.right, .5f, 4, 6);
+            var target = new Crypt { Name = "Flight validation target", Position = flight.AimOrigin + flight.AimForward * 55 - Vector3.up * 3, Health = 10000 };
+            game.Crypts.Add(target);
+            try
+            {
+                game.Arsenal.Tick(0, false);
+                Vector3 projection = flight.Camera.WorldToViewportPoint(game.Arsenal.AimPoint);
+                Vector2 expected = Vector2.one * .5f + (flight.Mode == FlightControlMode.BoundedReticle ? flight.ReticleOffset : Vector2.zero);
+                Require(Vector2.Distance(new Vector2(projection.x, projection.y), expected) < .001f, "HUD/weapon ray disagree during movement.");
+                if (flight.Mode == FlightControlMode.BoundedReticle)
+                    Require(Mathf.Abs(projection.x - .5f) > .01f && Mathf.Abs(projection.y - .5f) > .01f, "Weapon fixture failed to test an off-centre sight.");
+                for (int slot = 0; slot < 4; slot++)
+                {
+                    var weapon = game.Arsenal.Weapons[slot];
+                    bool unlocked = weapon.Unlocked;
+                    float ammo = weapon.Ammo, cooldown = weapon.Cooldown, health = target.Health;
+                    try
+                    {
+                        weapon.Unlocked = true; weapon.Ammo = 10; weapon.Cooldown = 0;
+                        game.Arsenal.TryFire(slot);
+                        // The launched rocket must keep its original solution as the gunship moves away.
+                        if (slot == 2)
+                            for (int tick = 0; tick < 50; tick++)
+                            {
+                                flight.TickCommand(Dt, Vector2.right, .5f, 0);
+                                game.Arsenal.Tick(Dt, false);
+                            }
+                        Require(target.Health < health, weapon.Name + " missed the displayed ground-facing gun solution.");
+                    }
+                    finally { weapon.Unlocked = unlocked; weapon.Ammo = ammo; weapon.Cooldown = cooldown; }
+                    // Restore target direction for the next weapon after the moving rocket pass.
+                    if (slot == 2)
+                    {
+                        Vector3 delta = target.Position + Vector3.up * 3 - flight.AimOrigin;
+                        flight.SetAim(Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg, -Mathf.Asin(delta.normalized.y) * Mathf.Rad2Deg);
+                    }
+                }
+            }
+            finally { game.Crypts.Remove(target); }
+            return "Noncentral B / centered A trace matches HUD; silver, water, rocket and UV damage the actual traced fixture. Rocket keeps its launch target while moving/banking.";
+        }
+
+        static string CheckOrbit(FlightController flight)
+        {
+            Vector3 center = World.BasePosition;
+            flight.Teleport(center + new Vector3(0, 32, -70), 0, 25);
+            float maximumError = 0;
+            for (int tick = 0; tick < 300; tick++)
+            {
+                Vector3 delta = center - flight.AimOrigin;
+                float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                float error = Mathf.DeltaAngle(flight.Heading, bearing);
+                float mouse;
+                if (flight.Mode == FlightControlMode.Direct) mouse = Mathf.Clamp(error, -100 * Dt, 100 * Dt);
+                else
+                {
+                    float rate = Mathf.Clamp(error * 4, -flight.MaximumYawRate, flight.MaximumYawRate);
+                    float x = Mathf.Sign(rate) * (flight.SteeringDeadZone + (1 - flight.SteeringDeadZone) * Mathf.Pow(Mathf.Abs(rate) / flight.MaximumYawRate, 1f / flight.SteeringExponent));
+                    float projection = 2f * Mathf.Tan(39f * Mathf.Deg2Rad) * flight.Camera.aspect;
+                    mouse = (Mathf.Atan(x * flight.ReticleHalfBounds.x * projection) - Mathf.Atan(flight.ReticleOffset.x * projection)) * Mathf.Rad2Deg;
+                }
+                float elevation = -Mathf.Asin(delta.normalized.y) * Mathf.Rad2Deg;
+                flight.TickCommand(Dt, Vector2.right, 0, mouse, Mathf.Clamp(elevation - flight.LookPitch, -1, 1));
+                maximumError = Mathf.Max(maximumError, Vector3.Angle(flight.AimForward, center - flight.AimOrigin));
+            }
+            Require(maximumError < 22, $"Strafing target lost from the sight: {maximumError:F2} deg.");
+            Require(flight.PlanarSpeed > 15 && Mathf.Abs(flight.Bank) > 1, "Orbit failed to produce lateral flight and visual banking.");
+            return $"Five-second strafe/circle under real commands, peak target error {maximumError:F2} deg, speed {flight.PlanarSpeed:F2} m/s, bank {flight.Bank:F2} deg.";
+        }
+
+        static string CheckSupplyApproach(Game game)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            FieldInfo previous = typeof(Game).GetField("previousSupplyPosition", flags);
+            FieldInfo hooked = typeof(Game).GetField("hookedSupply", flags);
+            MethodInfo tick = typeof(Game).GetMethod("TickSupplies", flags);
+            object oldPrevious = previous.GetValue(game), oldHooked = hooked.GetValue(game);
+            float fuel = game.Fuel;
+            int collected = game.SuppliesCollected;
+            Supply supply = game.SpawnSupply(World.Ground(-500, -700), SupplyKind.Fuel);
+            Require(supply != null, "Could not create isolated approach supply.");
+            try
+            {
+                game.Fuel = 40;
+                game.Flight.Teleport(supply.Position + new Vector3(0, 8, -35), 0, 35);
+                previous.SetValue(game, game.Flight.transform.position);
+                hooked.SetValue(game, null);
+                object[] arguments = { Dt };
+                for (int i = 0; i < 180; i++)
+                {
+                    game.Flight.TickCommand(Dt, i < 100 ? Vector2.up : Vector2.zero, 0, 0);
+                    tick.Invoke(game, arguments);
+                }
+                float distance = Game.HorizontalDistance(supply.Position, game.Flight.transform.position);
+                Require(supply.Collected && game.Fuel > 40, "Low commanded approach failed to hook and deliver fuel.");
+                Require(distance < 8 && game.Flight.PlanarSpeed < .1f, $"Approach overshot its hover: {distance:F2}m.");
+                return $"Low approach hooks real fuel cargo and stops {distance:F2}m from crate; stable hover after braking.";
+            }
+            finally
+            {
+                game.Fuel = fuel; game.SuppliesCollected = collected;
+                previous.SetValue(game, oldPrevious); hooked.SetValue(game, oldHooked);
+                game.Supplies.Remove(supply);
+                if (supply.Visual) UnityEngine.Object.Destroy(supply.Visual.gameObject);
+            }
+        }
+
+        static string CheckAllocations(FlightController flight)
+        {
+            Reset(flight);
+            for (int i = 0; i < 120; i++) flight.TickCommand(Dt, new Vector2(.4f, .8f), .2f, .01f);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 240; i++) flight.TickCommand(Dt, new Vector2(.4f, .8f), .2f, .01f);
+            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            Require(bytes == 0, $"Flight tick allocated {bytes} managed bytes over 240 warm ticks.");
+            return $"{bytes} managed bytes across 240 warm flight ticks (movement, steering, climb, presentation and lamp); excludes existing HUD/game systems.";
         }
 
         static Vector3 Horizontal(Vector3 value) => new Vector3(value.x, 0, value.z);
