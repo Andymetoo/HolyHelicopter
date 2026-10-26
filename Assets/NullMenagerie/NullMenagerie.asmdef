@@ -1,0 +1,6 @@
+{
+    "name": "NullMenagerie",
+    "rootNamespace": "NullMenagerie",
+    "references": ["Unity.InputSystem"],
+    "autoReferenced": true
+}

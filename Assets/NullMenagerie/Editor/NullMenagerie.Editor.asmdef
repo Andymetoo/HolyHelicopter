@@ -1,0 +1,7 @@
+{
+    "name": "NullMenagerie.Editor",
+    "rootNamespace": "NullMenagerie.Editor",
+    "references": ["NullMenagerie"],
+    "includePlatforms": ["Editor"],
+    "autoReferenced": true
+}
