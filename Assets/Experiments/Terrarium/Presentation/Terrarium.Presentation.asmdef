@@ -1,0 +1,6 @@
+{
+    "name": "Terrarium.Presentation",
+    "rootNamespace": "Terrarium.Presentation",
+    "references": ["Terrarium.Core"],
+    "autoReferenced": true
+}

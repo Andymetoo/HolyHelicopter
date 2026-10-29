@@ -1,0 +1,7 @@
+{
+    "name": "Terrarium.Core",
+    "rootNamespace": "Terrarium.Core",
+    "references": [],
+    "autoReferenced": false,
+    "noEngineReferences": true
+}

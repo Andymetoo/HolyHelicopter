@@ -1,0 +1,18 @@
+Terrarium compiled-source manifest (SHA-256)
+Arguments: --ticks 2000 --seeds 19 --output Temp/Terrarium/evidence-seed19 --trace-seed 19 --trace-ticks 2000 --skip-stress
+Compiler: C:\Program Files\dotnet\sdk\9.0.312\Roslyn\bincore\csc.dll
+Framework references: C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319
+PowerShell: 5.1.26100.9711
+
+89c4a6f28b9b97d43dace0cf96cad94a57b57ff014345fea440ba065a4c5d18d  Assets/Experiments/Terrarium/Core/Actions.cs
+23a8f5ee06eba90ee78bdb55e567ce722aff1d9e11dd4444b221d3fb3531e4d7  Assets/Experiments/Terrarium/Core/Decisions.cs
+94b9798becf5ff5674685edeaccfd544611e817b8ffae2699766b3d37c6e136d  Assets/Experiments/Terrarium/Core/DeterministicRandom.cs
+e5fd442c452919b4420e89d9a0ce9ffedba7ce9ae711af5e27a08ceb44c6c878  Assets/Experiments/Terrarium/Core/Model.cs
+d94807ac5c944e74c0ae11392931186124df120da46c26a656dbd12e6b02471c  Assets/Experiments/Terrarium/Core/Simulation.cs
+16fa0998fc85d90a4b9487186ab11e6deb0dad0902fab70bbf37c050c3ce3e22  Assets/Experiments/Terrarium/Core/StateDigest.cs
+1a6df7a4a0f7076cf05214e37e171cd4dc4451ce3ac246ddd6a5fa8436c71568  Assets/Experiments/Terrarium/Validation/HeadlessHarness.cs
+bdf685026f69a702de91c28fe73f9e93d39aad89f2c7bd257cab6f7e4f65c876  Assets/Experiments/Terrarium/Validation/MechanismChecks.cs
+bb556a768c49c22b1c2d01b42f67a11aca96f7cf696c2f01a769274c91147d7b  Assets/Experiments/Terrarium/Validation/Run-Headless.ps1
+
+Execution reused the exact compiled executable from the main evidence run; no recompilation occurred.
+Compiled executable SHA-256: 0fa382890dc4ccdd0df1d0b9de56e4de5d22ccebc2bfa20a4df63ded150cfbf7

@@ -1,0 +1,3 @@
+﻿"seed","tick","from","to","event","previous_event","trust_before","trust_after","affinity_before","affinity_after","attachment_before","attachment_after","expected_care_before","expected_care_after","reciprocity_before","reciprocity_after"
+"19","332","0","13","998","-1","0.000","-0.023","0.000","-0.037","0.000","0.000","0.100","0.065","0.000","0.000"
+"19","332","2","13","998","-1","0.000","-0.009","0.000","-0.003","0.000","0.000","0.100","0.086","0.000","0.000"

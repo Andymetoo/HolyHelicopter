@@ -1,0 +1,14 @@
+Terrarium static validation — 2026-10-28
+PASS: Core and Presentation compile with C# 7.3 and warnings as errors.
+Command: powershell -NoProfile -ExecutionPolicy Bypass -File Assets/Experiments/Terrarium/Validation/Check-UnityCompilation.ps1
+Installed reference assemblies: C:/Program Files/Unity/Hub/Editor/6000.3.5f1
+Project editor version: 6000.4.1f1
+No Unity process was launched and Play Mode was not entered.
+Pending: actual scene import in project editor, layout/input/font/controls and live performance.
+
+SHA-256 of presentation and scene inputs:
+a7c3fa88859dfdbbf991e88ee16813e9d2342fb606922a80ae19d1fc8d970d0e  Assets/Experiments/Terrarium/Presentation/TerrariumObserver.cs
+645906ca8f3f8b4d15fb1618a5c7e83323b12d5fd880acb7fcfbabc25cedcd70  Assets/Experiments/Terrarium/Presentation/Terrarium.Presentation.asmdef
+c958f732542e046cb729b03ba92b2173e554116faab23723b4d4b242a5c2b107  Assets/Experiments/Terrarium/Core/Terrarium.Core.asmdef
+6e6df126729707e740bc0a64db9638b9aec2d7cdc45bea8d785c6ab9e3112870  Assets/Experiments/Terrarium/Scenes/Terrarium.unity
+261830502c4b2a1a5279e3f4bfda2d01f5d06f87f149ecfc10fa1de0466e5b19  Assets/Experiments/Terrarium/Validation/Check-UnityCompilation.ps1

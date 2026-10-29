@@ -1,0 +1,8 @@
+﻿"seed","id","tick","kind","actor","target","object","x","y","amount","cause","secondary_cause","witnesses","summary"
+"7","23","4","Conversation","9","8","-1","16","8","0.230","-1","-1","4;6;8;9;11;14","Jori and Ira exchanged observations. Jori described fruit patch 14, but Ira retained equally fresh or newer evidence. Ira described fruit patch 14, but Jori retained equally fresh or newer evidence."
+"7","80","14","Acquire","8","-1","39","19","5","1.200","-1","-1","8;9;14","Ira acquired 1.20 material from fallen branches 8 (unclaimed); stock now 2.43."
+"7","81","14","Acquire","9","-1","39","19","5","1.200","-1","80","8;9;14","Jori acquired 1.20 material from fallen branches 8 (unclaimed); stock now 1.23."
+"7","89","15","Acquire","8","-1","39","19","5","1.200","81","81","8;9;14","Ira acquired 1.20 material from fallen branches 8 (unclaimed); stock now 0.04."
+"7","95","16","Construction","8","-1","56","19","5","2.000","-1","-1","8;9;12;14","Ira assembled a shared windbreak from two material units; anyone nearby gains protection and more effective rest."
+"7","619","187","Conversation","9","8","-1","17","8","0.231","23","-1","0;1;3;8;9;12;14","Jori and Ira exchanged observations. Ira retained stronger evidence about Eli's stock. Ira reported fruit patch 7 at 4.75 units (observation age 27); Jori accepted it at confidence 0.52."
+"7","1241","324","Observation","9","-1","10","16","16","-1.578","619","-1","9","Jori found fruit patch 7 at 3.18 units; a report suggested 4.75."

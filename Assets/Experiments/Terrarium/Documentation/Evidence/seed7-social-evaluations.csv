@@ -1,0 +1,4 @@
+﻿"seed","tick","from","to","event","previous_event","trust_before","trust_after","affinity_before","affinity_after","attachment_before","attachment_after","expected_care_before","expected_care_after","reciprocity_before","reciprocity_after"
+"7","187","8","9","619","23","0.010","0.008","0.044","0.060","0.005","0.007","0.116","0.112","0.000","0.000"
+"7","187","9","8","619","23","0.007","0.011","0.037","0.068","0.005","0.009","0.111","0.118","0.000","0.000"
+"7","324","9","8","1241","619","0.011","-0.009","0.068","0.068","0.009","0.009","0.118","0.118","0.000","0.000"
