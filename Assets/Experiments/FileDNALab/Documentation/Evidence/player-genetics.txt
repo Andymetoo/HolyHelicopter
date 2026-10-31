@@ -1,0 +1,14 @@
+PASS 228 inputs / 18230666 source bytes; 50 folded files; 179 unique expressed genomes
+EXAMPLE Recipe.txt: 2 masses / 1 joints / 0 actuators / 3 nodes / 0 synapses; branches 0; expression 80c6c552aeb121b6891b8387abec2473a3f4064a35c744cbfb6cd0ae21f3b722
+EXAMPLE Articulated tape.bin: 10 masses / 9 joints / 9 actuators / 9 nodes / 0 synapses; branches 0; expression 4368f1faf8dfbc30e9ef8d2bcc94d44cd5a24abe3f5e216ec09fc3c7e7f15b28
+EXAMPLE Branch circuit.bin: 10 masses / 9 joints / 9 actuators / 9 nodes / 0 synapses; branches 1; expression b5bd4a41cf4f838405bbabff3d44a3b7118991655d20a31009806eeb43b40c2e
+EXAMPLE Zero byte.bin: 1 masses / 0 joints / 0 actuators / 0 nodes / 0 synapses; branches 0; expression 815cfa107e8e2fb1be48688bfed8b42e49c0564955a581d927d40d82d0bdc923
+EXAMPLE Incremental.bin: 1 masses / 0 joints / 0 actuators / 0 nodes / 0 synapses; branches 0; expression 778ba59a5f83f4ae484e2cb5f0d5d35ad4a8fd24604fe016bd3c6e5b3056ace5
+EXAMPLE Noise.bin: 3 masses / 2 joints / 2 actuators / 6 nodes / 4 synapses; branches 1; expression 772b16078c0fbf60c0b1ed47530f6e7ae1d787cf3eb0243c2a1cbbc06932d30e
+EXAMPLE Empty.bin: 1 masses / 0 joints / 0 actuators / 0 nodes / 0 synapses; branches 0; expression 815cfa107e8e2fb1be48688bfed8b42e49c0564955a581d927d40d82d0bdc923
+Segments (count: specimens): 1:131; 2:20; 3:8; 4:2; 5:3; 7:2; 8:1; 10:2; 15:1; 16:1; 19:4; 20:2; 21:2; 23:5; 24:5; 25:7; 26:7; 27:5; 28:1; 29:1; 31:1; 32:3; 34:1; 35:11; 40:2
+Joints: segment count minus one. Joint kinds hinge/spring/fixed/distance: 312, 274, 686, 359
+Shapes circle/capsule/box: 575, 427, 857
+Motors (count: specimens): 0:157; 1:12; 2:6; 3:3; 4:3; 6:7; 7:2; 8:4; 9:4; 10:4; 11:3; 12:2; 13:7; 14:2; 15:1; 16:3; 18:2; 20:1; 23:2; 24:3
+Branching specimens: 62; sensory nodes total: 515; zero-motor specimens: 157
+PASS deterministic construction, renamed identity, full-stream coverage, sequence sensitivity, content mutation, archive roundtrip, valid references, force limits, inert outcomes, file limits.

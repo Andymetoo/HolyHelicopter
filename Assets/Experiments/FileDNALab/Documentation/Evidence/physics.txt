@@ -1,0 +1,16 @@
+MATCH 0 / neutral / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=3.139 / broken=0 / clamps=0
+MATCH 1 / file / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=3.508 / broken=0 / clamps=0
+MATCH 2 / paired / 11.67s / B WINS / A lost 60% of original mass beyond containment / ΔA=27.290 / broken=0 / clamps=0
+MATCH 3 / neutral / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=2.042 / broken=1 / clamps=0
+MATCH 4 / file / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=2.061 / broken=0 / clamps=1
+MATCH 5 / paired / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=3.172 / broken=1 / clamps=0
+MATCH 6 / neutral / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=2.042 / broken=0 / clamps=0
+MATCH 7 / file / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=7.207 / broken=0 / clamps=0
+MATCH 8 / paired / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=3.716 / broken=0 / clamps=0
+MATCH 9 / neutral / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=2.758 / broken=0 / clamps=0
+MATCH 10 / file / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=4.053 / broken=2 / clamps=0
+MATCH 11 / paired / 8.63s / B WINS / A lost 60% of original mass beyond containment / ΔA=28.301 / broken=0 / clamps=0
+MATCH 12 / neutral / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=3.093 / broken=0 / clamps=0
+MATCH 13 / file / 15.02s / DRAW / timeout; both retained sufficient mass / ΔA=4.040 / broken=0 / clamps=0
+PASS 14 autonomous matchups, 15 simulated seconds each unless eliminated; active motor observations at tick 300: 71; breaks: 4; contacts: 60662; speed clamps: 1; numerical faults: 0.
+PASS ready/pause, deterministic body construction and short replay, bounded neural outputs, double KO, single loss, timeout, root-neutral mass loss, biome reproducibility, immutable genotype across environments.

@@ -1,0 +1,3 @@
+PASS actual standalone scene loaded, OnGUI rendered, autonomous simulation advanced to 4.500 simulated seconds; paused; captured desktop and physics world.
+2 masses / 1 joints / 0 actuators / 3 nodes / 0 synapses
+10 masses / 9 joints / 9 actuators / 9 nodes / 0 synapses

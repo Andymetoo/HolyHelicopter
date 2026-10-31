@@ -1,0 +1,38 @@
+PASS 395 identical inputs expressed under both Legacy and Developmental Genetics (790 genomes).
+Authored instruction fixtures are marked in inputs.csv; they are not represented as discoveries from arbitrary real files.
+
+Legacy / 395 inputs
+unique expressed genomes 298; structural signatures 292
+segments: 1:231; 2:37; 3:11; 4:5; 5:7; 6:1; 7:3; 8:1; 9:1; 10:2; 15:1; 16:1; 18:1; 19:5; 20:3; 21:3; 23:8; 24:10; 25:11; 26:9; 27:8; 28:3; 29:1; 31:2; 32:4; 34:1; 35:22; 36:1; 40:2
+joints: 0:231; 1:37; 2:11; 3:5; 4:7; 5:1; 6:3; 7:1; 8:1; 9:2; 14:1; 15:1; 17:1; 18:5; 19:3; 20:3; 22:8; 23:10; 24:11; 25:9; 26:8; 27:3; 28:1; 30:2; 31:4; 33:1; 34:22; 35:1; 39:2
+growth depth: 0:231; 1:49; 2:14; 3:5; 4:9; 5:3; 6:18; 7:12; 8:12; 9:13; 10:4; 14:1; 23:2; 24:2; 34:20
+branch points: 0:295; 1:23; 2:5; 3:5; 4:13; 5:17; 6:14; 7:13; 8:6; 9:2; 10:2
+motors: 0:280; 1:21; 2:8; 3:7; 4:3; 5:1; 6:7; 7:5; 8:4; 9:8; 10:5; 11:5; 12:3; 13:14; 14:5; 15:2; 16:4; 18:2; 20:1; 23:5; 24:5
+connections: 0:300; 1:6; 2:9; 3:7; 4:6; 6:3; 7:1; 9:2; 11:1; 13:1; 14:2; 16:1; 17:2; 20:3; 21:6; 22:5; 23:13; 24:7; 25:5; 26:5; 27:2; 28:3; 30:2; 32:2; 34:1
+single bodies 231; branched specimens 100; repeated motif occurrences 864; zero-motor specimens 280
+parent/child edges 2701; similar proportions 1153; same shape 1482; same material 893; same joint 1418
+mean absolute parent log-size change 0.40460; mean within-body size CV 0.12768
+non-authored-only multi-part specimens 157 / 386; branched 96; repeated motifs 846
+at segment cap 2; cap-rejected growth attempts 14; obstructed buds 0; node cap losses 12; motor cap losses 0
+distinct-content phenotype collisions beyond first member 45 (silence, padding, folding and nonexpressed arguments can all contribute)
+
+Developmental / 395 inputs
+unique expressed genomes 301; structural signatures 294
+segments: 1:229; 2:57; 3:15; 4:4; 5:14; 6:12; 7:7; 8:13; 9:5; 10:13; 11:6; 12:3; 13:2; 14:2; 15:4; 17:1; 19:1; 20:3; 21:1; 27:1; 29:1; 33:1
+joints: 0:229; 1:57; 2:15; 3:4; 4:14; 5:12; 6:7; 7:13; 8:5; 9:13; 10:6; 11:3; 12:2; 13:2; 14:4; 16:1; 18:1; 19:3; 20:1; 26:1; 28:1; 32:1
+growth depth: 0:229; 1:72; 2:35; 3:15; 4:15; 5:6; 6:6; 7:3; 8:3; 9:3; 10:2; 11:1; 12:1; 13:1; 15:1; 26:1; 32:1
+branch points: 0:308; 1:59; 2:20; 3:3; 4:4; 6:1
+motors: 0:309; 1:20; 2:9; 3:22; 4:6; 5:8; 6:5; 7:5; 8:1; 9:3; 10:4; 11:1; 16:1; 20:1
+connections: 0:326; 2:1; 3:3; 4:2; 5:2; 6:2; 7:1; 9:3; 10:2; 11:3; 12:4; 13:8; 14:3; 15:4; 16:1; 17:4; 18:1; 19:2; 21:2; 23:2; 24:1; 25:2; 26:1; 29:1; 30:2; 32:1; 33:2; 34:2; 38:1; 41:1; 42:1; 46:1; 62:2; 65:1
+single bodies 229; branched specimens 87; repeated motif occurrences 184; zero-motor specimens 309
+parent/child edges 901; similar proportions 493; same shape 812; same material 715; same joint 746
+mean absolute parent log-size change 0.22226; mean within-body size CV 0.09918
+non-authored-only multi-part specimens 159 / 386; branched 84; repeated motifs 150
+at segment cap 0; cap-rejected growth attempts 0; obstructed buds 3275; node cap losses 10; motor cap losses 0
+distinct-content phenotype collisions beyond first member 42 (silence, padding, folding and nonexpressed arguments can all contribute)
+
+Distinct raw contents 343; distinct reduced codon tapes 342; reduction/padding collisions 1
+folding budget comparison fixture 13: 512 vs 1024 codons; Legacy expression changed True; Developmental changed True
+folding budget comparison fixture 41: 512 vs 1024 codons; Legacy expression changed True; Developmental changed True
+folding budget comparison fixture 83: 512 vs 1024 codons; Legacy expression changed True; Developmental changed True
+PASS sequence-sensitive growth, literal repetition, inherited local circuits/phase, parent-scoped synapses, obstructed buds, single-body legitimacy, strict execution limits, old FDNA-1 pinning, versioned limits, signature independence from content SHA and immutable environmental DNA.

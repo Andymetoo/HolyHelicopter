@@ -1,0 +1,5 @@
+{
+  "name": "FileDNALab.Core",
+  "rootNamespace": "FileDNALab.Core",
+  "noEngineReferences": true
+}

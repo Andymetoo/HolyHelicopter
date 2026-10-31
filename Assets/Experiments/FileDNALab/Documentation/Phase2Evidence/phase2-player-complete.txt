@@ -1,0 +1,4 @@
+PASS graphics-enabled Windows player / Unity 6000.4.1f1
+Core comparison, full-corpus native construction, isolated motion trials, original match-rule regressions, third-file biome trials, and same-input initial/after photographs completed.
+Default scene: Assets/Experiments/FileDNALab/Scenes/ThePit.unity
+Legacy and Developmental grammar versions are visible in each comparison. Validation did not write match history.

@@ -1,0 +1,6 @@
+{
+  "name": "FileDNALab.Editor",
+  "rootNamespace": "FileDNALab.Editor",
+  "references": ["FileDNALab.Core", "FileDNALab.Runtime", "FileDNALab.Validation"],
+  "includePlatforms": ["Editor"]
+}

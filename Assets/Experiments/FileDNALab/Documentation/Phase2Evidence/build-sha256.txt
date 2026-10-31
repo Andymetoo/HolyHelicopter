@@ -1,0 +1,4 @@
+43eb56e1eaa1fbb73e3176576ddab0ee9dd661ef99ee985c0fd7ce77d6566293  Builds/FileDNALabPhase2/File DNA Lab.exe
+2c9f40a20552664a9c65f6585324648f03c9678b2d917ef9d35e6d779039e307  Builds/FileDNALabPhase2/File DNA Lab_Data/Managed/FileDNALab.Core.dll
+5166182d3d93180f1a3c12b8403cb9940b21aa3e1e99a045778cb57af8b15fe9  Builds/FileDNALabPhase2/File DNA Lab_Data/Managed/FileDNALab.Runtime.dll
+9c9e75192b147f9c9db19f58a0f35d741a41a26ed08152f3c5a0cab78a004051  Builds/FileDNALabPhase2/File DNA Lab_Data/Managed/FileDNALab.Validation.dll

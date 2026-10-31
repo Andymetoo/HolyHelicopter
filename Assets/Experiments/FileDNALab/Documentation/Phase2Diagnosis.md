@@ -1,0 +1,27 @@
+# Phase 2: diagnosis before revision
+
+The starting point is the uncommitted Phase 1 implementation, preserved byte-for-byte under `Logs/FileDNALab/Phase2/Phase1Snapshot/` with a SHA-256 inventory. The earlier evidence remains in `Documentation/Evidence/`. The original `Core/Interpreter.cs` and its FDNA-1 archive implementation will remain the Legacy interpreter.
+
+## Causes found in the actual code
+
+1. **No physical trait inheritance.** Both GROW and BRANCH call `Body(b,...)`. That function independently assigns width, height, density, damping, shape, joint type, angle and strength from the current codon. There is a cursor, but no inherited developmental state. A hinge following a spring, or a tiny part following a heavy block, is usually an unrelated fresh assignment.
+2. **Nonlocal branching.** BRANCH uses `b[1] % segmentCount`, so the target changes when preceding growth changes the body count. It can attach to any older mass without a growth-point or branch-return relationship. Absolute child rotations and parent-relative attachment directions use different frames.
+3. **Repetition is suppressed rather than developed.** Identical consecutive codons are skipped. Repeated data can therefore express less repeated structure, not more. There is no sequence-repeat operation or inherited circuit module.
+4. **Distantly addressed controllers.** MOTOR/SENSOR target `b[1] % currentSegmentCount`; deferred neural references use modulo the final node count. There is no local node role, inherited motor/sensor relationship, or cloning/remapping of wiring alongside a limb. A small insertion can retarget many unrelated connections.
+5. **Loose attachment geometry.** The builder separates neighbours by bounding half-diagonals and a gap, then places hinge/fixed anchors at the centre midpoint plus a world-vertical shift. For a long capsule or rotated box, those anchors need not lie near the actual surfaces. Spring rest length is always 55% of initial centre separation, introducing a large contraction independent of the material's developmental history.
+6. **Uncontrolled intersections with older branches.** Adjacent separation does not prevent nonadjacent segments from overlapping at birth. There is no initial collider-penetration measurement in the Phase 1 checks. Such overlaps can inject solver impulses that resemble biological dysfunction but are assembly defects.
+7. **Loss and limits are real.** Only low opcode bits and selected argument lanes are expressed. Promoters silence codons, duplicate suppression removes runs, and large files are reduced by lane means plus an alternating-row sum. In folded regions, paired repeated rows can cancel positional contributions. This is explicitly lossy; SHA preserves content identity, not lost expression. Forty-segment/64-node/24-motor caps discard later components. These facts need measured collision/cap rates, not a claim that every byte becomes a feature.
+
+The Phase 1 evidence reports 228 inputs and 179 unique expressed genomes. That establishes determinism and diversity of parameter assignments, not structural coherence or useful locomotion. Its displacement metric includes falling; it must not be relabelled as locomotion. Four broken joints without numerical faults is meaningful runtime evidence, but does not measure initial overlaps or parent/child similarity.
+
+## Additional causes confirmed by native and visual testing
+
+The native Phase 2 audit found an approximately .008 m penetration where an early .012 m hull clearance had accepted a pair. Native convex shape margins and hull approximation require a larger .04 m exclusion skin; all accepted bodies are still checked with Collider2D.Distance.
+
+The first actual birth screenshots exposed another Phase 1 builder defect: after lane translation, Rigidbody2D.position and its rendered child did not necessarily agree until the first simulation step. Sprites could appear piled at unshifted construction positions while selection labels and native bodies occupied the translated positions. Both modes now use separate, nonphysical silhouettes that follow the native position/rotation before returning a Ready match and during observation. Changing the Rigidbody GameObject Transform was rejected because it affected Unity's pending synchronization queue and altered Legacy motion. The final visual fix leaves those physics Transforms and native construction unchanged. The native audit asserts sprite/physics position agreement, and camera fitting uses native poses rather than potentially stale collider bounds.
+
+## Revision criteria
+
+Developmental mode should inherit geometry, material and joint state; use local growth frames and a branch stack; repeat actual instruction blocks; and clone locally addressed circuit modules with the body. Births must use actual primitive surface ports. An obstructed bud may fail at its genetically chosen position; the builder must not rotate/search/rearrange it into a functional animal. A failed bud and a complexity cap must be visible in the development trace.
+
+Compare both modes on identical byte inputs, preserving Legacy construction and FDNA-1 archive semantics. Measure repeated structure, parent/child variation, depth, branching, limits and collisions in addition to counts. Use native Unity penetration queries and physical trials; classify horizontal motion after settling separately from falling, wind, immobility and structural failure. Representative visual cases must be selected by a published rule and show both modes for each same source.

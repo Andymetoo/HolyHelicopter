@@ -1,0 +1,5 @@
+{
+  "name": "FileDNALab.Validation",
+  "rootNamespace": "FileDNALab.Validation",
+  "references": ["FileDNALab.Core", "FileDNALab.Runtime"]
+}

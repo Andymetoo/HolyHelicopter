@@ -1,0 +1,5 @@
+{
+  "name": "FileDNALab.Runtime",
+  "rootNamespace": "FileDNALab.Runtime",
+  "references": ["FileDNALab.Core"]
+}

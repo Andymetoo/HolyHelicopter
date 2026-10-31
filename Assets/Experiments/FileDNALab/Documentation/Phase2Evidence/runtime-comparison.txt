@@ -1,0 +1,13 @@
+PASS native Unity construction of 790 same-input genotypes / 4392 physical masses.
+Initial penetration tolerance: 0.003 m. Legacy: 2509 overlapping pairs across 88 specimens. Developmental: 0 across 0 specimens.
+No correction was applied to Legacy geometry. Obstructed developmental buds were rejected by the documented growth rule before physical instantiation.
+
+70 isolated neutral-arena motion trials, 8 simulated seconds each unless eliminated; exact input indices in motion.csv.
+Selection fixed before runtime: indices 0,1,2,3,4,5,6,7,11,23,47,71,95,119,143,167,191,215,239,263,287,311,335,359, all seven authored developmental fixtures, and all real files.
+After 2 s settling: locomotion candidate requires |horizontal centroid displacement| >0.5 m, >=1 s contact with arena surfaces, >=80% retained original mass, active motor at tick 300, and >=7.9 s elapsed. No opponent, wind or platform slope. This is an observational candidate, not proof of a gait or a fitness function.
+Legacy: containment/structural failure 2; immobile 23; locomotion candidate 4; motor activity without locomotion threshold 5; passive drift 1
+active actuator observations at tick300 89; broken joints 75; speed clamps 400; numerical faults 0; mean |post-settle dx| 0.37707
+Developmental: containment/structural failure 1; immobile 20; locomotion candidate 4; motor activity without locomotion threshold 2; passive drift 8
+active actuator observations at tick300 70; broken joints 94; speed clamps 50; numerical faults 0; mean |post-settle dx| 0.57364
+PASS 3 additional same-genotype neutral vs third-file biome comparisons; nontrivial physical differences without genome changes. Biome: d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8|2.5|-16|1.5|0.65|3|3.5|1.6|32|6|0|0
+PASS existing match rules remain covered separately by the original Phase 1 physics suite.
